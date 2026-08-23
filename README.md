@@ -52,9 +52,13 @@ The generated client public key is shown in the editor and must be configured as
 Create the app record for `com.blink.tunnel` in App Store Connect. Add these GitHub Actions secrets:
 
 - `APPLE_TEAM_ID`
-- `APP_STORE_CONNECT_KEY_ID`
-- `APP_STORE_CONNECT_ISSUER_ID`
-- `APP_STORE_CONNECT_PRIVATE_KEY_BASE64` — Base64 of the `.p8` API key, on macOS: `base64 -i AuthKey_XXXX.p8 | pbcopy`
+- `APPLE_CERTIFICATE_BASE64`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_KEYCHAIN_PASSWORD`
+- `APPLE_PROVISION_PROFILE_BASE64`
+- `APPSTORE_KEY_ID`
+- `APPSTORE_ISSUER_ID`
+- `APPSTORE_PRIVATE_KEY` — raw `.p8` content or its Base64 representation
 
 The API key should have App Manager access. Run the `TestFlight` workflow manually or push a tag such as `v1.0.0`. It builds both native dependencies, signs the app and extension, archives, and uploads through `xcodebuild -exportArchive`.
 

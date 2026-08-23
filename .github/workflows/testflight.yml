@@ -21,30 +21,65 @@ jobs:
           go-version: "1.26.x"
       - name: Validate signing secrets
         env:
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          KEY_B64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          CERTIFICATE_B64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          PROFILE_B64: ${{ secrets.APPLE_PROVISION_PROFILE_BASE64 }}
         run: |
           test -n "$DEVELOPMENT_TEAM"
           test -n "$KEY_ID"
           test -n "$ISSUER_ID"
-          test -n "$KEY_B64"
+          test -n "$PRIVATE_KEY"
+          test -n "$CERTIFICATE_B64"
+          test -n "$CERTIFICATE_PASSWORD"
+          test -n "$KEYCHAIN_PASSWORD"
+          test -n "$PROFILE_B64"
       - name: Install tools
         run: brew install xcodegen
       - name: Prepare dependencies and project
         run: make prepare
       - name: Install App Store Connect key
         env:
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          KEY_B64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
         run: |
           mkdir -p "$RUNNER_TEMP/private_keys"
-          printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8"
+          printf '%s' "$PRIVATE_KEY" > "$RUNNER_TEMP/private-key-input"
+          if grep -q 'BEGIN PRIVATE KEY' "$RUNNER_TEMP/private-key-input"; then
+            mv "$RUNNER_TEMP/private-key-input" "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8"
+          else
+            base64 --decode "$RUNNER_TEMP/private-key-input" > "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8"
+            rm -f "$RUNNER_TEMP/private-key-input"
+          fi
           chmod 600 "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8"
+      - name: Install signing certificate and provisioning profile
+        env:
+          CERTIFICATE_B64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          PROFILE_B64: ${{ secrets.APPLE_PROVISION_PROFILE_BASE64 }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/distribution.p12"
+          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          printf '%s' "$CERTIFICATE_B64" | base64 --decode > "$CERTIFICATE_PATH"
+          printf '%s' "$PROFILE_B64" | base64 --decode > "$PROFILE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/Blink.mobileprovision"
+          rm -f "$CERTIFICATE_PATH" "$PROFILE_PATH"
       - name: Archive
         env:
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
           xcodebuild archive \
             -project Blink.xcodeproj \
@@ -67,8 +102,8 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :manageAppVersionAndBuildNumber bool true' "$RUNNER_TEMP/ExportOptions.plist"
       - name: Export and upload to TestFlight
         env:
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Blink.xcarchive" \
