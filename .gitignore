@@ -1,0 +1,26 @@
+.DS_Store
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+Blink.xcodeproj/
+Vendor/
+artifacts/
+Config/Developer.xcconfig
+
+# Signing material must only be stored in GitHub Actions secrets
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+profile_base64.txt
+AuthKey_*.p8
+
+# Local environment and generated metadata
+.env
+.env.*
+!.env.example
+*.xcarchive
+*.ipa
+*.dSYM

@@ -1,0 +1,29 @@
+name: iOS Archive Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  archive-without-signing:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+      - name: Install tools
+        run: brew install xcodegen
+      - name: Prepare dependencies and project
+        run: make prepare
+      - name: Archive compile check
+        run: |
+          xcodebuild archive \
+            -project Blink.xcodeproj \
+            -scheme Blink \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Blink.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO

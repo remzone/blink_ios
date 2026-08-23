@@ -1,0 +1,131 @@
+name: Blink
+options:
+  bundleIdPrefix: com.blink
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "16.0"
+  groupSortPosition: top
+packages:
+  WireGuardKit:
+    path: Vendor/wireguard-apple
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    ENABLE_BITCODE: NO
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    APP_GROUP_ID: group.com.blink.tunnel
+    KEYCHAIN_GROUP_ID: $(AppIdentifierPrefix)com.blink.tunnel.shared
+configs:
+  Debug: debug
+  Release: release
+targets:
+  Blink:
+    type: application
+    platform: iOS
+    sources:
+      - path: Blink
+        excludes:
+          - NetworkExtension
+    dependencies:
+      - target: BlinkPacketTunnel
+        embed: true
+    entitlements:
+      path: Blink/Config/Blink.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - $(APP_GROUP_ID)
+        keychain-access-groups:
+          - $(KEYCHAIN_GROUP_ID)
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.blink.tunnel
+        PRODUCT_NAME: Blink
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Blink
+        INFOPLIST_KEY_BlinkKeychainAccessGroup: $(KEYCHAIN_GROUP_ID)
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    scheme:
+      testTargets:
+        - BlinkTests
+
+  BlinkPacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Blink/NetworkExtension
+      - path: Blink/Models/VPNProfile.swift
+      - path: Blink/Models/SharedConstants.swift
+      - path: Blink/Models/TunnelMetrics.swift
+      - path: Blink/Storage/SecretStore.swift
+      - path: Blink/Services/FreeTurnConfigBuilder.swift
+    dependencies:
+      - package: WireGuardKit
+        product: WireGuardKit
+      - framework: Vendor/free-turn-proxy/dist/Mobile.xcframework
+        embed: false
+    entitlements:
+      path: Blink/Config/BlinkPacketTunnel.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - $(APP_GROUP_ID)
+        keychain-access-groups:
+          - $(KEYCHAIN_GROUP_ID)
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+    info:
+      path: Blink/NetworkExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Blink Tunnel
+        BlinkKeychainAccessGroup: $(KEYCHAIN_GROUP_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.blink.tunnel.PacketTunnel
+        PRODUCT_NAME: BlinkPacketTunnel
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        LIBRARY_SEARCH_PATHS: $(inherited) $(CONFIGURATION_BUILD_DIR)
+    preBuildScripts:
+      - name: Build WireGuard Go Bridge
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          make -C "$SRCROOT/Vendor/wireguard-apple/Sources/WireGuardKitGo" \
+            PLATFORM_NAME="$PLATFORM_NAME" \
+            SDKROOT="$SDKROOT" \
+            ARCHS="$ARCHS" \
+            CONFIGURATION_BUILD_DIR="$CONFIGURATION_BUILD_DIR" \
+            CONFIGURATION_TEMP_DIR="$CONFIGURATION_TEMP_DIR" \
+            IPHONEOS_DEPLOYMENT_TARGET="$IPHONEOS_DEPLOYMENT_TARGET" \
+            build
+        outputFiles:
+          - $(CONFIGURATION_BUILD_DIR)/libwg-go.a
+
+  BlinkTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: BlinkTests
+    dependencies:
+      - target: Blink
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.blink.tunnel.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO

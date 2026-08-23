@@ -1,0 +1,80 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: macos-15
+    env:
+      DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+      - name: Validate signing secrets
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_B64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+        run: |
+          test -n "$DEVELOPMENT_TEAM"
+          test -n "$KEY_ID"
+          test -n "$ISSUER_ID"
+          test -n "$KEY_B64"
+      - name: Install tools
+        run: brew install xcodegen
+      - name: Prepare dependencies and project
+        run: make prepare
+      - name: Install App Store Connect key
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          KEY_B64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8"
+          chmod 600 "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8"
+      - name: Archive
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -project Blink.xcodeproj \
+            -scheme Blink \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Blink.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+      - name: Create export options
+        run: |
+          /usr/libexec/PlistBuddy -c 'Add :method string app-store-connect' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :destination string upload' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :signingStyle string automatic' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $DEVELOPMENT_TEAM" "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :manageAppVersionAndBuildNumber bool true' "$RUNNER_TEMP/ExportOptions.plist"
+      - name: Export and upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Blink.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_$KEY_ID.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
