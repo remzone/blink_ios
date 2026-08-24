@@ -9,7 +9,7 @@ struct ProfilesView: View {
     @State private var importPresented = false
 
     var body: some View {
-        List(selection: $container.profileStore.selectedProfileID) {
+        List(selection: selectedProfileID) {
             if container.profileStore.profiles.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "shield.slash").font(.largeTitle).foregroundStyle(.secondary)
@@ -42,7 +42,9 @@ struct ProfilesView: View {
             } label: { Image(systemName: "plus") }
         }
         .sheet(isPresented: $createPresented) { NavigationStack { ProfileEditorView(profile: VPNProfile()) } }
-        .sheet(item: $editingProfile) { NavigationStack { ProfileEditorView(profile: $0) } }
+        .sheet(item: $editingProfile) { profile in
+            NavigationStack { ProfileEditorView(profile: profile) }
+        }
         .fileImporter(isPresented: $importPresented, allowedContentTypes: [.json]) { result in
             do {
                 let url = try result.get()
@@ -56,6 +58,13 @@ struct ProfilesView: View {
             } catch { errorMessage = error.localizedDescription }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK") {} } message: { Text(errorMessage ?? "") }
+    }
+
+    private var selectedProfileID: Binding<UUID?> {
+        Binding(
+            get: { container.profileStore.selectedProfileID },
+            set: { container.profileStore.selectedProfileID = $0 }
+        )
     }
 
     private func delete(_ profile: VPNProfile) {

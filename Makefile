@@ -16,9 +16,10 @@ bootstrap:
 
 framework: bootstrap
 	go install golang.org/x/mobile/cmd/gomobile@latest
-	"$$(go env GOPATH)/bin/gomobile" init
+	go install golang.org/x/mobile/cmd/gobind@latest
+	PATH="$$(go env GOPATH)/bin:$$PATH" "$$(go env GOPATH)/bin/gomobile" init
 	mkdir -p Vendor/free-turn-proxy/dist
-	cd Vendor/free-turn-proxy && "$$(go env GOPATH)/bin/gomobile" bind -target ios,iossimulator -ldflags "-checklinkname=0 -s -w" -o dist/Mobile.xcframework ./mobile
+	cd Vendor/free-turn-proxy && PATH="$$(go env GOPATH)/bin:$$PATH" "$$(go env GOPATH)/bin/gomobile" bind -target ios,iossimulator -ldflags "-checklinkname=0 -s -w" -o dist/Mobile.xcframework ./mobile
 
 icon:
 	@sips -z 1024 1024 -s format png Blink/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png --out Blink/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
