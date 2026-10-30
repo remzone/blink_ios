@@ -52,6 +52,10 @@ session/password. HTTPS is required, redirects are rejected, response size is
 bounded at 128 KiB, and cookies/disk cache are disabled. The URL is stored only in
 Keychain. Responses and VLESS IDs are not written to public profile exports.
 
+`fixtures/vokop.subscription.v1.json` is byte-for-byte copied from the panel
+contract fixture. Static guards compare it with XCTest input, and a native test
+checks the feed-to-mobile field mapping.
+
 The parser validates schema, revision, <=31-day lifetime, expiration, profile
 count/IDs, UUIDs, ports and VK call URL. The high-water revision for the saved URL is stored in Keychain independently
 of the preview, so failed refreshes, navigation and restarts do not reset it.

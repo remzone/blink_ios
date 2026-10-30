@@ -1,0 +1,1 @@
+{"schema":"vokop.subscription.v1","revision":1,"issued_at":1793300000,"expires_at":1793303600,"profiles":[{"id":"first","name":"Contract fixture (not live)","vless":{"uuid":"00000000-0000-4000-8000-000000000001"},"turn":{"peer_host":"vpn.example.org","peer_port":56000,"vk_call_url":"https://vk.com/call/join/DEMO_TOKEN","streams":2}}]}

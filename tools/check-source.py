@@ -2,6 +2,8 @@
 """Static configuration guards; NOT a Swift compiler or iOS build."""
 from pathlib import Path
 import plistlib
+import json
+import re
 import sys
 import yaml
 root = Path(__file__).resolve().parents[1]
@@ -20,6 +22,12 @@ provider = (root / 'Blink/XrayExtension/XrayPacketTunnelProvider.swift').read_te
 assert 'packetFlow.readPackets' in provider and 'packetFlow.writePackets' in provider
 for unsupported in ['value(forKey:', 'getsockopt(', 'excludedRoutes =']:
     assert unsupported not in provider, unsupported
+fixture = json.loads((root / 'fixtures/vokop.subscription.v1.json').read_text())
+test_source = (root / 'BlinkTests/VokopSubscriptionTests.swift').read_text()
+embedded = re.search(r'private let fixture = #"(.*?)"#', test_source).group(1)
+assert json.loads(embedded) == fixture, 'Swift fixture drift'
+assert fixture['schema'] == 'vokop.subscription.v1'
+print('PASS canonical panel subscription fixture matches Swift test fixture')
 print('PASS static project/workflow/entitlement/public packetFlow guards (not Swift type checking)')
 if '--swift-syntax' in sys.argv:
     from tree_sitter import Language, Parser

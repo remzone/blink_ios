@@ -3,6 +3,7 @@ package mobile
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
@@ -34,4 +35,46 @@ func TestVKProfileAndDNSContractWithoutExternalTraffic(t *testing.T) {
 	if _, err = StartVK(string(raw), &fakeSink{}, denyAllSockets{}); err == nil {
 		t.Fatal("expired subscription accepted")
 	}
+}
+
+func TestCanonicalPanelFeedMapsToMobileProfile(t *testing.T) {
+	raw, err := os.ReadFile("../../fixtures/vokop.subscription.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var feed struct {
+		Schema    string `json:"schema"`
+		ExpiresAt int64  `json:"expires_at"`
+		Profiles  []struct {
+			VLESS struct {
+				UUID string `json:"uuid"`
+			} `json:"vless"`
+			TURN struct {
+				PeerHost  string `json:"peer_host"`
+				PeerPort  int    `json:"peer_port"`
+				VKCallURL string `json:"vk_call_url"`
+				Streams   int    `json:"streams"`
+			} `json:"turn"`
+		} `json:"profiles"`
+	}
+	if err = json.Unmarshal(raw, &feed); err != nil {
+		t.Fatal(err)
+	}
+	if feed.Schema != "vokop.subscription.v1" || len(feed.Profiles) != 1 {
+		t.Fatal("wrong shared contract fixture")
+	}
+	p := feed.Profiles[0]
+	mobile := VKProfile{UUID: p.VLESS.UUID, PeerHost: p.TURN.PeerHost, PeerPort: p.TURN.PeerPort, VKCallURL: p.TURN.VKCallURL, Streams: p.TURN.Streams, ExpiresAt: feed.ExpiresAt, DNSServer: "1.1.1.1"}
+	encoded, err := json.Marshal(mobile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err = json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["peerPort"] != float64(56000) || fields["dnsServer"] != "1.1.1.1" || !validUUID(mobile.UUID) {
+		t.Fatal("feed/mobile mapping drift")
+	}
+	// Timestamp is deliberately historic fixture data, never a live subscription.
 }
