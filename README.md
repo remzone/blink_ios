@@ -1,10 +1,16 @@
 # Blink for iOS
 
-Blink is an iOS 16+ Packet Tunnel VPN client. The production tunnel chain is:
+Blink is an iOS 16+ Packet Tunnel VPN client. The legacy tunnel chain is:
 
 `Blink app → Packet Tunnel Extension → WireGuardKit → localhost UDP → free-turn-proxy → VK TURN → VPS → WireGuard server`
 
 The extension owns both Free TURN and WireGuard lifecycles, so the tunnel remains alive while the main app is suspended.
+
+## Vokop / Xray source integration
+
+A separate Xray packet-tunnel extension, VLESS TCP/basic XHTTP import, Vokop VK TURN feed UI and native mobile bridge are now included. **Not yet compiled for iOS or tested on a device.** See [architecture, supported formats, licensing and verification](docs/XRAY-MOBILE.md). Balance remains available through the panel Telegram bot, not an invented mobile API.
+
+Both macOS workflows are manual-only; no build or TestFlight upload starts on push, tag or pull request.
 
 ## What is included
 
@@ -18,7 +24,7 @@ The extension owns both Free TURN and WireGuard lifecycles, so the tunnel remain
 
 ## Build on macOS
 
-Install Xcode 16, its command-line tools, Homebrew, Go 1.26+, and XcodeGen. Then:
+Install Xcode 16, its command-line tools, Homebrew, Go 1.27.3+, and XcodeGen. Then:
 
 ```sh
 brew install go xcodegen
@@ -26,14 +32,15 @@ make prepare
 open Blink.xcodeproj
 ```
 
-Select your Apple Development Team for both `Blink` and `BlinkPacketTunnel`. Xcode must create the following identifiers and capabilities:
+Select your Apple Development Team for `Blink`, `BlinkPacketTunnel` and `BlinkXrayTunnel`. Xcode must create the following identifiers and capabilities:
 
 - `com.blink.tunnel` — App Groups, Keychain Sharing, Network Extensions / Packet Tunnel.
 - `com.blink.tunnel.PacketTunnel` — the same capabilities.
+- `com.blink.tunnel.XrayTunnel` — separate Xray extension with the same capabilities.
 - App Group: `group.com.blink.tunnel`.
 - Shared Keychain group: `$(AppIdentifierPrefix)com.blink.tunnel.shared`.
 
-If these bundle IDs are already owned, change all three identifiers together in `project.yml` and `Blink/Models/SharedConstants.swift` before generating the project.
+If these bundle IDs are already owned, change all bundle/group identifiers together in `project.yml` and `Blink/Models/SharedConstants.swift` before generating the project.
 
 ## Profile requirements
 
@@ -60,7 +67,7 @@ Create the app record for `com.blink.tunnel` in App Store Connect. Add these Git
 - `APPSTORE_ISSUER_ID`
 - `APPSTORE_PRIVATE_KEY` — raw `.p8` content or its Base64 representation
 
-The API key should have App Manager access. Run the `TestFlight` workflow manually or push a tag such as `v1.0.0`. It builds both native dependencies, signs the app and extension, archives, and uploads through `xcodebuild -exportArchive`.
+The API key should have App Manager access. Run the `TestFlight` workflow manually only after separately authorizing an Apple build/upload. It builds the native dependencies, signs the app and extension, archives, and uploads through `xcodebuild -exportArchive`.
 
 Apple may ask for export-compliance information because WireGuard and DTLS use cryptography. Answer this accurately for your distribution jurisdiction; the project deliberately does not hardcode `ITSAppUsesNonExemptEncryption = NO`.
 

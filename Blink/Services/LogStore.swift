@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct LogEntry: Identifiable {
     enum Level: String { case info = "INFO", warning = "WARN", error = "ERROR" }

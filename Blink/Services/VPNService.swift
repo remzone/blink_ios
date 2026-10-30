@@ -35,7 +35,10 @@ final class SystemVPNService: VPNService {
         self.logStore = logStore
         statusObserver = NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { [weak self] notification in
             guard let connection = notification.object as? NEVPNConnection else { return }
-            Task { @MainActor in self?.consume(connection.status) }
+            Task { @MainActor in
+                guard let self, connection === self.manager?.connection else { return }
+                self.consume(connection.status)
+            }
         }
         Task { await restoreManager() }
     }

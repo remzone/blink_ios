@@ -7,6 +7,8 @@ struct RootView: View {
                 .tabItem { Label("Home", systemImage: "house.fill") }
             NavigationStack { ProfilesView() }
                 .tabItem { Label("Profiles", systemImage: "list.bullet.rectangle") }
+            NavigationStack { SubscriptionView() }
+                .tabItem { Label("Vokop", systemImage: "person.crop.circle") }
             NavigationStack { SettingsView() }
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }

@@ -31,7 +31,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(nil)
             } catch {
                 freeTurn.stop()
-                logger.error("Tunnel start failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Tunnel start failed")
                 completionHandler(error)
             }
         }

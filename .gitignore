@@ -24,3 +24,5 @@ AuthKey_*.p8
 *.xcarchive
 *.ipa
 *.dSYM
+
+Native/dist/

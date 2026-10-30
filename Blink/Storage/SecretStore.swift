@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-enum SecretKind: String { case wireGuardPrivateKey, obfuscationKey }
+enum SecretKind: String, CaseIterable { case wireGuardPrivateKey, obfuscationKey, subscriptionURL, xrayProfile }
 
 protocol SecretStore {
     func save(_ value: String, profileID: UUID, kind: SecretKind) throws
@@ -24,11 +24,23 @@ final class KeychainSecretStore: SecretStore {
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: account]
         if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
-        SecItemDelete(query as CFDictionary)
-        guard !value.isEmpty else { return }
+        if value.isEmpty {
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw KeychainError.unexpectedStatus(status)
+            }
+            return
+        }
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        // Preserve the previous credential/high-water revision if updating fails.
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else { throw KeychainError.unexpectedStatus(updateStatus) }
         var item = query
-        item[kSecValueData as String] = Data(value.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        attributes.forEach { item[$0.key] = $0.value }
         let status = SecItemAdd(item as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
     }
@@ -48,7 +60,7 @@ final class KeychainSecretStore: SecretStore {
     }
 
     func delete(profileID: UUID) throws {
-        for kind in [SecretKind.wireGuardPrivateKey, .obfuscationKey] {
+        for kind in SecretKind.allCases {
             var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service, kSecAttrAccount as String: key(profileID, kind)]
             if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }

@@ -30,7 +30,8 @@ final class SocketProtector: NSObject, MobileProtectorProtocol {
     func protect(_ fd: Int) -> Bool {
         lock.lock(); var index = interfaceIndex; lock.unlock()
         if index == 0 { index = Self.fallbackInterfaceIndex() }
-        guard index != 0 else { return true }
+        // Never allow an unprotected relay socket into the VPN route.
+        guard index != 0 else { return false }
         let socket = Int32(fd)
         let length = socklen_t(MemoryLayout<UInt32>.size)
         let ipv4 = setsockopt(socket, IPPROTO_IP, Self.ipBoundIf, &index, length)

@@ -3,6 +3,7 @@ import Foundation
 enum SharedConstants {
     static let appGroup = "group.com.blink.tunnel"
     static let tunnelBundleIdentifier = "com.blink.tunnel.PacketTunnel"
+    static let xrayTunnelBundleIdentifier = "com.blink.tunnel.XrayTunnel"
     static let profileIDKey = "profileID"
 
     static func storageDirectory(fileManager: FileManager = .default) -> URL {
