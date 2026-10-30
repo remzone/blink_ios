@@ -8,7 +8,7 @@ The extension owns both Free TURN and WireGuard lifecycles, so the tunnel remain
 
 ## Vokop / Xray source integration
 
-A separate Xray packet-tunnel extension, VLESS TCP/basic XHTTP import, Vokop VK TURN feed UI and native mobile bridge are now included. **Not yet compiled for iOS or tested on a device.** See [architecture, supported formats, licensing and verification](docs/XRAY-MOBILE.md). Balance remains available through the panel Telegram bot, not an invented mobile API.
+A separate Xray packet-tunnel extension, VLESS TCP/basic XHTTP import, bounded plain/base64 standard3x-ui subscriptions, Vokop VK TURN feed UI and native mobile bridge are now included. **Not yet compiled for iOS or tested on a device.** See [architecture, supported formats, licensing and verification](docs/XRAY-MOBILE.md). Balance remains available through the panel Telegram bot, not an invented mobile API.
 
 Both macOS workflows are manual-only; no build or TestFlight upload starts on push, tag or pull request.
 

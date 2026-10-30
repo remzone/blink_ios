@@ -9,13 +9,17 @@ final class XrayProfileTests: XCTestCase {
         XCTAssertEqual(p.serverName, "tls.example.org"); XCTAssertEqual(p.host, "http.example.org")
         XCTAssertEqual(p.mode, "stream-up")
     }
+    func testIPv6EndpointHasNoURLBrackets() throws {
+        let p = try XrayProfile.parse(base.replacingOccurrences(of: "vpn.example.org", with: "[2001:db8::1]"))
+        XCTAssertEqual(p.address, "2001:db8::1")
+    }
     func testRealityParametersPreserved() throws {
-        let p = try XrayProfile.parse(base + "?security=reality&pbk=key&sid=abcd&fp=chrome&flow=xtls-rprx-vision")
-        XCTAssertEqual(p.publicKey, "key"); XCTAssertEqual(p.shortId, "abcd")
+        let p = try XrayProfile.parse(base + "?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=abcd&fp=chrome&flow=xtls-rprx-vision")
+        XCTAssertEqual(p.publicKey, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"); XCTAssertEqual(p.shortId, "abcd")
         XCTAssertEqual(p.flow, "xtls-rprx-vision")
     }
     func testRejectsLossyOrInsecureImports() {
-        for suffix in ["?type=ws", "?type=xhttp&extra=%7B%7D", "?security=tls&allowInsecure=1", "?type=tcp&type=xhttp", "?encryption=unknown"] {
+        for suffix in ["?type=ws", "?type=xhttp&extra=%7B%7D", "?security=tls&allowInsecure=1", "?type=tcp&type=xhttp", "?encryption=unknown", "?security=reality", "?security=tls&sni=", "?type=xhttp&mode=bogus", "?type=xhttp&path=relative", "?security=none&pbk=ignored", "?type=tcp&path=%2Fignored"] {
             XCTAssertThrowsError(try XrayProfile.parse(base + suffix))
         }
     }

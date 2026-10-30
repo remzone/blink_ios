@@ -6,6 +6,7 @@ struct XrayConnectionView: View {
     @State private var link = ""
     var body: some View {
         Form {
+            Section { NavigationLink("Import standard 3x-ui subscription") { StandardSubscriptionView() } }
             Section("Direct VLESS") {
                 SecureField("vless://…", text: $link)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()

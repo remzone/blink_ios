@@ -1,0 +1,11 @@
+{
+  "total": 4,
+  "supported": 2,
+  "rejected": 2,
+  "networks": [
+    "tcp",
+    "xhttp",
+    null,
+    null
+  ]
+}

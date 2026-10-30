@@ -72,12 +72,22 @@ users to `/balance` in the administrator's Telegram bot. No admin API calls or
 invented balance numbers are present. A future endpoint needs its own scoped
 self-account token and cannot reuse administrator authentication.
 
-Direct mode accepts an individual `vless://` link from a normal 3x-ui
-subscription. Supported parameters: `type=tcp|xhttp`, `security=none|tls|reality`,
+Direct mode accepts an individual `vless://` link or a standard 3x-ui HTTPS
+subscription returning a plain URI list or base64/base64url URI list. The
+subscription screen displays every node with either a Connect action or an
+explicit rejection reason; it reuses the individual VLESS parser. Raw and decoded
+data are bounded at 128 KiB, at most 256 nodes and 16 KiB per node. The source URL
+is stored only in Keychain; fetched node credentials remain in memory until a
+selected profile is stored in Keychain. Requests use the same no-redirect,
+no-cookie, no-cache HTTPS transport as the Vokop feed; query-scoped tokens are
+allowed for standard subscription URLs, but userinfo credentials/fragments are
+rejected. Supported parameters: `type=tcp|xhttp`, `security=none|tls|reality`,
 `encryption=none`, `sni`, `fp`, `pbk`, `sid`, `flow`, `host`, `path`, `mode`.
-Vision flow is TCP-only. TLS verification cannot be disabled. Unsupported and
+Vision flow is TCP-only and requires TLS/REALITY. The importer validates
+REALITY key/short-ID shape, nonempty server name, XHTTP mode/path, and supported
+preset fingerprints; settings irrelevant to the chosen mode are rejected. TLS verification cannot be disabled. Unsupported and
 duplicate parameters are rejected, including XHTTP `extra`/`downloadSettings`;
-they are not silently lost. Bulk standard subscription fetching is not included.
+they are not silently lost. Unsupported protocols/options are not silently omitted or converted.
 
 ## VK server-authentication caveat
 
@@ -127,7 +137,8 @@ mock peer round trip, lifecycle/restart/invalid profiles, and VK mock lifecycle,
 protected socket failure and loopback smux relay tests. Local mocks do not prove
 live VK authentication, TURN availability or iOS routing.
 
-XCTest source covers Vokop fixture/lifetime/URL validation and VLESS parsing, but
+XCTest source covers Vokop fixture/lifetime/URL validation, VLESS parsing,
+standard URI-list/base64 equivalence, per-node rejection and bounds, but
 has not been run. A future explicitly authorized macOS check must use Go 1.27.3+,
 Xcode/SDKs and `make prepare`, then compile both extensions and run XCTest. The
 new Swift-to-gomobile calls must be type checked against generated BlinkCore

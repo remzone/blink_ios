@@ -32,6 +32,11 @@ final class XrayVPNController: ObservableObject {
         catch { errorMessage = "Unable to read the VLESS profile." }
     }
 
+    func connect(profile: XrayProfile, secrets: SecretStore) async {
+        do { await connect(json: try profile.json(), mode: "direct", server: profile.address, secrets: secrets) }
+        catch { errorMessage = "Unable to encode the VLESS profile." }
+    }
+
     func connect(profile: VokopSubscription.Profile, expiresAt: Int64, dnsServer: String, secrets: SecretStore) async {
         struct VKProfile: Encodable {
             let uuid: String; let peerHost: String; let peerPort: Int

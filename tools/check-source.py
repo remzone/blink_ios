@@ -3,11 +3,13 @@
 from pathlib import Path
 import plistlib
 import json
+import base64
 import re
 import sys
 import yaml
 root = Path(__file__).resolve().parents[1]
 project = yaml.safe_load((root / 'project.yml').read_text())
+assert {'path': 'fixtures', 'buildPhase': 'resources'} in project['targets']['BlinkTests']['sources']
 new = project['targets']['BlinkXrayTunnel']
 assert new['dependencies'] == [{'framework': 'Native/dist/BlinkCore.xcframework', 'embed': False}]
 assert 'XrayExtension' in project['targets']['Blink']['sources'][0]['excludes']
@@ -27,6 +29,15 @@ test_source = (root / 'BlinkTests/VokopSubscriptionTests.swift').read_text()
 embedded = re.search(r'private let fixture = #"(.*?)"#', test_source).group(1)
 assert json.loads(embedded) == fixture, 'Swift fixture drift'
 assert fixture['schema'] == 'vokop.subscription.v1'
+standard = (root / 'fixtures/standard-subscription.txt').read_bytes()
+assert base64.decodebytes((root / 'fixtures/standard-subscription.base64').read_bytes()) == standard
+expected = json.loads((root / 'fixtures/standard-subscription.expected.json').read_text())
+assert len(standard.decode().splitlines()) == expected['total'] == 4
+assert expected['supported'] == 2 and expected['rejected'] == 2
+transport = (root / 'Blink/Services/SecureSubscriptionHTTP.swift').read_text()
+for guard in ['URLSessionConfiguration.ephemeral', 'configuration.urlCredentialStorage = nil', 'completionHandler(nil)', 'data.count < Self.maximumBytes']:
+    assert guard in transport, guard
+print('PASS standard subscription fixture encoding and secure HTTP source guards (not Swift execution)')
 print('PASS canonical panel subscription fixture matches Swift test fixture')
 print('PASS static project/workflow/entitlement/public packetFlow guards (not Swift type checking)')
 if '--swift-syntax' in sys.argv:

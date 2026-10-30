@@ -76,7 +76,7 @@ enum SubscriptionError: LocalizedError {
     case invalidURL, invalidDocument, responseTooLarge, accessDenied, requestFailed
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Use the full HTTPS Vokop subscription link supplied by your administrator."
+        case .invalidURL: return "Use the full HTTPS subscription link supplied by your administrator."
         case .invalidDocument: return "Subscription is invalid, expired, or older than the last loaded revision."
         case .responseTooLarge: return "Subscription exceeds the size limit."
         case .accessDenied: return "Subscription access denied. Check your subscription with the administrator."

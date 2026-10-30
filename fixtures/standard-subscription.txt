@@ -1,0 +1,4 @@
+vless://00000000-0000-4000-8000-000000000001@vpn.example.org:443?type=tcp&security=tls&sni=vpn.example.org#TCP%20fixture
+vless://00000000-0000-4000-8000-000000000002@vpn.example.org:443?type=xhttp&security=tls&path=%2Fup&host=http.example.org&mode=stream-up#XHTTP%20fixture
+trojan://not-a-real-password@vpn.example.org:443#Unsupported%20protocol
+vless://00000000-0000-4000-8000-000000000004@vpn.example.org:443?type=xhttp&security=tls&extra=%7B%7D#Unsupported%20options
