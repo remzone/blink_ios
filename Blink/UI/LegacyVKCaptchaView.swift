@@ -9,10 +9,13 @@ struct LegacyVKCaptchaView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    BlinkHeader(title: "Один небольшой шаг.", subtitle: "Пройди проверку VK, и Blink продолжит подключение.")
+                }
                 Section("Ручная проверка VK") {
                     if let image { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180) } else { Text("Загрузка изображения…") }
                     SecureField("Код с изображения", text: $code).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Продолжить") { authorizer.submitLegacy(code) }.disabled(code.isEmpty || image == nil)
+                    Button { authorizer.submitLegacy(code) } label: { Label("Продолжить", systemImage: "arrow.right") }.buttonStyle(BlinkActionStyle(prominent: true)).disabled(code.isEmpty || image == nil)
                 }
             }.navigationTitle("Проверка VK").blinkScreen().toolbar { Button("Отмена", role: .cancel) { authorizer.cancelLegacy() } }
         }.task(id: challenge.id) {

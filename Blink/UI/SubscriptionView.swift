@@ -16,54 +16,56 @@ struct SubscriptionView: View {
     @State private var requestID = UUID()
     private let credentialID = UUID(uuidString: "57f8b06a-c211-4b4f-8525-14cb2e7a882e")!
 
+    @State private var confirmForget = false
+
     var body: some View {
-        List {
-            Section("Подписка Vokop") {
-                Picker("VK TURN", selection: $transport) { Text("TCP").tag("tcp"); Text("UDP").tag("udp") }.disabled(xray.busy)
-                TextField("DNS для авторизации VK", text: $bootstrapDNS)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                Text("Для авторизации VK до запуска VPN используется этот DNS. Укажите IP резолвера.")
-                    .font(.caption).foregroundStyle(.secondary)
-                SecureField("HTTPS-ссылка подписки", text: $link)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .disabled(loading)
-                Button(loading ? "Загрузка…" : "Обновить подписку") { refresh() }
-                    .disabled(loading || link.isEmpty)
-                Button("Забыть подписку", role: .destructive) { forget() }
-                if let message { Text(message).foregroundStyle(.secondary) }
-            }
-            if let document {
-                Section("Профили подписки") {
-                    LabeledContent("Версия", value: String(document.revision))
-                    LabeledContent("Действует до", value: Date(timeIntervalSince1970: TimeInterval(document.expires_at)).formatted())
-                    ForEach(document.profiles) { profile in
-                        VStack(alignment: .leading) {
-                            Text(profile.name.isEmpty ? profile.id : profile.name)
-                            Button("Подключить через VK TURN") {
-                                Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, transport: transport, secrets: container.secretStore) }
-                            }.disabled(xray.busy)
-                            Text("VLESS / VK TURN · \(profile.turn.peer_host):\(profile.turn.peer_port)")
-                                .font(.caption).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                BlinkHeader(title: "Связь другим путём.", subtitle: "Твоя подписка Vokop и подключение через VK.")
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 14) { BlinkBadge(symbol: "arrow.triangle.branch"); Text("Подписка Vokop").font(.title3.weight(.semibold)) }
+                    SecureField("HTTPS-ссылка подписки", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder).disabled(loading)
+                    Text("Транспорт до VK").font(.caption).foregroundStyle(.secondary)
+                    Picker("VK TURN", selection: $transport) { Text("TCP").tag("tcp"); Text("UDP").tag("udp") }.pickerStyle(.segmented).disabled(xray.busy)
+                    TextField("DNS для авторизации VK", text: $bootstrapDNS).textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
+                    Text("Этот DNS используется до подключения VPN. Укажи IP резолвера.").font(.caption).foregroundStyle(.secondary)
+                    Button { refresh() } label: { Label(loading ? "Загружаем…" : "Обновить подписку", systemImage: "arrow.clockwise") }.buttonStyle(BlinkActionStyle(prominent: true)).disabled(loading || link.isEmpty)
+                    Button(role: .destructive) { confirmForget = true } label: { Label("Забыть подписку", systemImage: "trash").font(.callout) }
+                    if loading { ProgressView("Получаем твои серверы…") }
+                }.blinkCard()
+                if let message { BlinkNotice(message: message) }
+                if let document {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Всё под рукой", systemImage: "person.crop.circle.badge.checkmark").font(.headline)
+                        LabeledContent("Действует до", value: Date(timeIntervalSince1970: TimeInterval(document.expires_at)).formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Серверы", value: String(document.profiles.count))
+                        LabeledContent("Версия подписки", value: String(document.revision))
+                    }.blinkCard()
+                    LazyVStack(spacing: 16) {
+                        ForEach(document.profiles) { profile in
+                            VStack(alignment: .leading, spacing: 16) {
+                                HStack(spacing: 14) { BlinkBadge(symbol: "globe.europe.africa"); Text(profile.name.isEmpty ? profile.id : profile.name).font(.headline).fixedSize(horizontal: false, vertical: true) }
+                                Button { Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, transport: transport, secrets: container.secretStore) } } label: { Label("Подключить через VK", systemImage: "power") }.buttonStyle(BlinkActionStyle(prominent: true)).disabled(xray.busy)
+                                Text("VLESS / VK TURN · \(profile.turn.peer_host):\(profile.turn.peer_port)").font(.caption).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading).blinkCard()
                         }
                     }
+                } else {
+                    BlinkEmptyState(symbol: "arrow.triangle.branch", title: "Добавь свой маршрут", detail: "Вставь ссылку подписки Vokop и обнови список. Здесь появятся доступные серверы.").blinkCard()
                 }
-            }
-            Section("Соединение") {
-                NavigationLink("Обычные VPN-профили · без VK") { UniversalProfilesView() }
-                Text(xray.status)
-                if let error = xray.errorMessage { Text(error).foregroundStyle(.red) }
-                Button("Проверить состояние") { Task { await xray.refreshTransportStatus() } }
-                Button("Отключить", role: .destructive) { xray.disconnect() }
-                Text("Выберите профиль подписки и транспорт до VK: TCP или UDP.")
-                Text("Экспериментальный VK-транспорт не проверяет сертификат DTLS-сервера. Используйте HTTPS в приложениях.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("Обычные ссылки и подписки Xray/WireGuard/AmneziaWG импортируются в разделе VPN-профили.")
-            }
-            Section("Баланс") {
-                Text("Баланс доступен командой /balance в Telegram-боте панели. В клиент вводится только ссылка подписки.")
-            }
-        }
-        .navigationTitle("Vokop").blinkScreen()
+                VStack(alignment: .leading, spacing: 16) {
+                    Label("Соединение", systemImage: "waveform.path.ecg").font(.headline)
+                    Text(xray.status).font(.subheadline).foregroundStyle(.secondary)
+                    if let error = xray.errorMessage { BlinkNotice(message: error, symbol: "exclamationmark.circle") }
+                    Button { Task { await xray.refreshTransportStatus() } } label: { Label("Проверить состояние", systemImage: "arrow.clockwise") }.buttonStyle(BlinkActionStyle())
+                    Button { xray.disconnect() } label: { Label("Отключить туннель", systemImage: "power") }.buttonStyle(BlinkActionStyle()).disabled(!xray.isConnected && !xray.busy)
+                    NavigationLink { UniversalProfilesView() } label: { Label("Обычные VPN-профили", systemImage: "globe.europe.africa") }
+                }.blinkCard()
+                BlinkNotice(message: "VK может попросить ручную проверку. В экспериментальном VK-транспорте сертификат DTLS-сервера не проверяется — используй HTTPS в приложениях.", symbol: "shield.lefthalf.filled")
+                BlinkNotice(message: "Баланс доступен по команде /balance в Telegram-боте панели. Здесь достаточно ссылки подписки.", symbol: "creditcard")
+            }.padding(22).frame(maxWidth: 800).frame(maxWidth: .infinity)
+        }.navigationTitle("Через VK").navigationBarTitleDisplayMode(.inline).blinkScreen()
+        .confirmationDialog("Забыть подписку Vokop?", isPresented: $confirmForget, titleVisibility: .visible) { Button("Забыть подписку", role: .destructive) { forget() }; Button("Оставить", role: .cancel) {} }
         .onAppear {
             guard link.isEmpty else { return }
             do {

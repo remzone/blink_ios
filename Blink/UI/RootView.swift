@@ -1,9 +1,9 @@
 import SwiftUI
 
 private enum BlinkScreen: String, CaseIterable, Identifiable, Hashable {
-    case home = "Главная", profiles = "VPN-профили", vokop = "Vokop", settings = "Настройки"
+    case home = "Главная", profiles = "Серверы", vokop = "Через VK", settings = "Настройки"
     var id: Self { self }
-    var icon: String { switch self { case .home: return "house"; case .profiles: return "network"; case .vokop: return "person.crop.circle"; case .settings: return "gearshape" } }
+    var icon: String { switch self { case .home: return "house.fill"; case .profiles: return "globe.europe.africa"; case .vokop: return "arrow.triangle.branch"; case .settings: return "slider.horizontal.3" } }
 }
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -15,7 +15,7 @@ struct RootView: View {
         Group {
             if sizeClass == .regular {
                 NavigationSplitView {
-                    List(BlinkScreen.allCases, selection: $selected) { screen in Label(screen.rawValue, systemImage: screen.icon).tag(screen) }.navigationTitle("Blink")
+                    List(BlinkScreen.allCases, selection: $selected) { screen in Label(screen.rawValue, systemImage: screen.icon).tag(screen) }.navigationTitle("Blink").blinkScreen().listStyle(.sidebar)
                 } detail: { NavigationStack { destination(selected ?? .home) } }
             } else {
                 TabView {
