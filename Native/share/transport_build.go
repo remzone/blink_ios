@@ -15,6 +15,7 @@ import (
 type shareTransportFields struct {
 	Network         string
 	HeaderType      string
+	Seed            string
 	Path            string
 	Host            string
 	KCPMTU          string
@@ -34,6 +35,7 @@ func transportFieldsFromURLQuery(q url.Values) shareTransportFields {
 	}
 	fields := shareTransportFields{
 		Network:         network,
+		Seed:            q.Get("seed"),
 		Path:            q.Get("path"),
 		Host:            q.Get("host"),
 		KCPMTU:          q.Get("mtu"),
@@ -45,7 +47,7 @@ func transportFieldsFromURLQuery(q url.Values) shareTransportFields {
 		ExtraJSON:       q.Get("extra"),
 		FMJSON:          q.Get("fm"),
 	}
-	if network == "raw" || network == "tcp" {
+	if network == "raw" || network == "tcp" || network == "kcp" || network == "mkcp" {
 		fields.HeaderType = q.Get("headerType")
 	}
 	return fields
@@ -80,7 +82,7 @@ func buildStreamFromTransportFields(t shareTransportFields) (*conf.StreamConfig,
 			streamSettings.RAWSettings = rawSettings
 		}
 	case "kcp", "mkcp":
-		if t.KCPMTU != "" || t.KCPTTI != "" {
+		if t.KCPMTU != "" || t.KCPTTI != "" || t.Seed != "" || t.HeaderType != "" {
 			mtu, err := parseKCPParameter(t.KCPMTU)
 			if err != nil {
 				return nil, err
@@ -90,6 +92,13 @@ func buildStreamFromTransportFields(t shareTransportFields) (*conf.StreamConfig,
 				return nil, err
 			}
 			streamSettings.KCPSettings = &conf.KCPConfig{Mtu: mtu, Tti: tti}
+			if t.Seed != "" {
+				streamSettings.KCPSettings.Seed = &t.Seed
+			}
+			if t.HeaderType != "" && t.HeaderType != "none" {
+				raw, _ := json.Marshal(map[string]string{"type": t.HeaderType})
+				streamSettings.KCPSettings.HeaderConfig = raw
+			}
 		}
 	case "ws", "websocket":
 		streamSettings.WSSettings = &conf.WebSocketConfig{Path: t.Path, Host: t.Host}
@@ -120,6 +129,32 @@ func buildStreamFromTransportFields(t shareTransportFields) (*conf.StreamConfig,
 			return nil, err
 		}
 		streamSettings.FinalMask = finalMask
+	}
+
+	if (network == "kcp" || network == "mkcp") && (t.Seed != "" || t.HeaderType != "" && t.HeaderType != "none") {
+		if streamSettings.FinalMask == nil {
+			streamSettings.FinalMask = &conf.FinalMask{}
+		}
+		present := false
+		for _, mask := range streamSettings.FinalMask.Udp {
+			if mask.Type == "mkcp-legacy" {
+				present = true
+			}
+		}
+		if !present {
+			if t.Seed != "" {
+				raw, _ := convertJsonToRawMessage(conf.MkcpLegacy{Value: t.Seed})
+				streamSettings.FinalMask.Udp = append(streamSettings.FinalMask.Udp, conf.Mask{Type: "mkcp-legacy", Settings: &raw})
+			}
+			if t.HeaderType != "" && t.HeaderType != "none" {
+				header := t.HeaderType
+				if header == "wechat-video" {
+					header = "wechat"
+				}
+				raw, _ := convertJsonToRawMessage(conf.MkcpLegacy{Header: header})
+				streamSettings.FinalMask.Udp = append(streamSettings.FinalMask.Udp, conf.Mask{Type: "mkcp-legacy", Settings: &raw})
+			}
+		}
 	}
 
 	return streamSettings, nil

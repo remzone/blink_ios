@@ -20,6 +20,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             guard let self else { return }
             let attempt = UUID(); self.generation = attempt; self.unreadySince = nil; self.pendingStart = completionHandler
             do {
+                try NativeResources.prepare()
                 guard let config = self.protocolConfiguration as? NETunnelProviderProtocol,
                       let idString = config.providerConfiguration?[SharedConstants.profileIDKey] as? String,
                       let id = UUID(uuidString: idString),

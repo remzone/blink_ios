@@ -12,27 +12,27 @@
 
 ## Профили и подписки
 
-| Движок | Импорт |
-| --- | --- |
-| Xray | `vless://`, `vmess://` (AEAD, включая base64 JSON aid=0), `trojan://`, `ss://` (SIP002/legacy), `socks://`, `hy2://` / `hysteria2://` |
-| WireGuard | `[Interface]` / `[Peer]` `.conf` |
-| AmneziaWG | `.conf` с AWG v3 параметрами Jc/Jmin/Jmax, S1–S4, H1–H4, I1–I5 |
-| Vokop VK TURN | Scoped HTTPS JSON `vokop.subscription.v1`, явный выбор TURN TCP/UDP |
+Подробная [матрица протоколов и форматов панели](docs/PROTOCOLS.md) общая с Android.
+Xray обслуживает VLESS, VMess AEAD, Trojan, SS/SS2022, HTTP CONNECT/SOCKS,
+Hysteria2 и MASQUE JSON. TUIC v5 и legacy Hysteria v1 используют sing-quic;
+WireGuard/AmneziaWG — официальный AWG backend.
 
-Для Xray реализованы TCP/raw, WS, gRPC, HTTPUpgrade, базовый XHTTP, KCP и TLS/REALITY
-при допустимых сочетаниях. Hysteria — версии 2. Проверка импорта использует
-закреплённый Xray. Полная совместимость со всеми настройками Happ **не заявляется**:
-произвольный Xray JSON, XHTTP `extra`/`fm`, SS plugins, Clash YAML, Amnezia `vpn://`
-backups и legacy VMess alterId>0 не импортируются. OpenVPN, Cisco AnyConnect,
-Forti и TUIC не добавлены. Неизвестные/неприменимые параметры и TLS insecure
-отклоняются; shell-команды из WG-конфигов не выполняются.
+Импорт: URI, plain/base64 HTTPS feed, одиночный Xray JSON или массив именованных
+configs, узлы Clash/Mihomo YAML, WG/AWG `.conf`, `wireguard://` и plain INI
+`vpn://` панели. Сохраняются отдельные названия стран/узлов; есть поиск и
+независимое обновление feeds. Пределы: 1 МиБ, до1024 узлов, Keychain vault до4 МиБ.
+Clash groups/rules/DNS не эмулируются; результат импорта явно сообщает это.
+Xray JSON сохраняет собственные routing/DNS/mux/policy/sniffing/streamSettings;
+внешние файлы, API/reverse, платформенные socket overrides отклоняются.
+XHTTP extra/FinalMask и geodata реализованы в общем ядре.
 
-В «VPN-профили» можно вставить URI, импортировать файл или HTTPS-подписку
-plain/base64 со списком URI. Каждая подписка обновляется отдельно, сохраняя
-ручные профили и другие feeds. Лимиты: 128 КиБ на ответ/файл, 256 профилей,
-512 КиБ на vault. Все исходные URI, конфиги и URL подписок содержат секреты и
-хранятся в общем Keychain `AfterFirstUnlockThisDeviceOnly`. Provider preferences
-содержат только ID и режим. Серверные inbound/peers должны быть настроены заранее.
+Не заявляется полная совместимость всех опций Happ. Legacy VMess alterId>0,
+внешние SS plugins и неподдержанные URI-параметры отклоняются; отключение
+TLS-проверки не включается молча. MTProto предназначен Telegram, серверный
+Dokodemo/tunnel не является отдельным клиентским VPN. OpenVPN/Cisco/Forti
+не добавлены. Секреты остаются в общем Keychain
+`AfterFirstUnlockThisDeviceOnly`; provider preferences содержат ID/режим.
+Серверные inbound/peers должны быть настроены заранее.
 
 Системный статус «VPN подключён» подтверждает запуск локального транспорта,
 а не интернет или успешный WireGuard handshake. Автоматического выбора узла,
@@ -43,8 +43,10 @@ plain/base64 со списком URI. Каждая подписка обновл
 
 Для компактной ширины используется TabView, для iPad/regular — NavigationSplitView
 с боковым меню. Главная прокручивается, контент ограничен по ширине; используются
-системные светлая/тёмная темы, Dynamic Type и масштабируемая иконка. Формы и
-файловый импорт общие. Это изменения исходников; визуальная проверка размеров,
+системные светлая/тёмная темы, Dynamic Type и масштабируемая иконка. Формы, профили, настройки, журналы и диагностика используют общую тему с mint-акцентом.
+Добавлены кнопки физического IP, IP туннеля, Google и YouTube HTTPS-пинга;
+это только исходники, iOS-привязка к физическому интерфейсу ещё не проверена.
+Файловый импорт общий. Это изменения исходников; визуальная проверка размеров,
 поворота, клавиатуры, VoiceOver и accessibility на iOS ещё предстоит.
 
 VK авторизуется **в основном приложении до установки VPN-маршрутов**. Современная
@@ -65,13 +67,13 @@ revision; денежного баланса в API панели нет — он 
 Go frameworks исключены из активного проекта. Старые профили автоматически
 не преобразуются — импортируйте обычный `.conf` или новый URI.
 
-Xray/VK используют IPv4; DNS идёт по TCP внутри прокси, AAAA получает пустой ответ.
+Xray/VK используют IPv4; URI/VK DNS идёт по TCP внутри прокси, AAAA получает пустой ответ. Пользовательский JSON сохраняет собственные DNS/routing.
 WG/AWG следуют Address/AllowedIPs/DNS/MTU `.conf`, включая явный IPv6. Проверка
 настоящего IPv6, отсутствия утечек и поведения iOS full/split routing ещё нужна.
 Подробности, ограничения и лицензии: [docs/XRAY-MOBILE.md](docs/XRAY-MOBILE.md).
 
 Выполнено на Linux: статические guards проекта/entitlements/fixtures и syntax
-parser для 42 Swift-файлов. Это **не компиляция Swift**. Native mirror проверяется
+parser для 46 Swift-файлов. Это **не компиляция Swift**. Native mirror проверяется
 `python3 tools/sync-native.py --check`; тесты Go выполнялись в Android-репозитории,
 а не как iOS-тесты. Приватные журналы и реквизиты исключены из Git.
 

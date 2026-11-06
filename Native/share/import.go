@@ -57,7 +57,7 @@ func ParseSingle(source string) (out *conf.OutboundDetourConfig, err error) {
 	} else {
 		u, err = url.Parse(source)
 	}
-	if err != nil || u == nil || u.Hostname() == "" || len(u.Hostname()) > 253 || u.User == nil && u.Scheme != "socks" {
+	if err != nil || u == nil || u.Hostname() == "" || len(u.Hostname()) > 253 || u.User == nil && u.Scheme != "socks" && u.Scheme != "http" && u.Scheme != "https" {
 		return nil, errors.New("endpoint required")
 	}
 	port, e := strconv.Atoi(u.Port())
@@ -68,7 +68,7 @@ func ParseSingle(source string) (out *conf.OutboundDetourConfig, err error) {
 		return nil, errors.New("path must be a query parameter")
 	}
 	allowed := map[string]bool{}
-	for _, k := range strings.Fields("type security encryption sni fp pbk sid pqv spx ech pcs vcn alpn flow host path mode headerType mtu tti authority serviceName obfs obfs-password mport ports hop-interval up down insecure allowInsecure") {
+	for _, k := range strings.Fields("type security encryption sni fp pbk sid pqv spx ech pcs vcn alpn flow host path mode headerType mtu tti authority serviceName obfs obfs-password mport ports hop-interval up down insecure allowInsecure extra fm cs support-x25519mlkem768 seed plugin x_padding_bytes") {
 		allowed[k] = true
 	}
 	q, e := url.ParseQuery(u.RawQuery)
@@ -83,8 +83,16 @@ func ParseSingle(source string) (out *conf.OutboundDetourConfig, err error) {
 	if u.Scheme != "hy2" && u.Scheme != "hysteria2" && (q.Has("insecure") || q.Has("allowInsecure")) {
 		return nil, errors.New("insecure TLS unsupported")
 	}
-	if q.Has("extra") || q.Has("fm") {
-		return nil, errors.New("extended settings unsupported")
+	for _, key := range []string{"extra", "fm"} {
+		if q.Has(key) && !uniqueJSON([]byte(q.Get(key))) {
+			return nil, errors.New("invalid extended JSON")
+		}
+	}
+	if q.Has("extra") && networkForQuery(q) != "xhttp" && networkForQuery(q) != "splithttp" {
+		return nil, errors.New("XHTTP extra without XHTTP")
+	}
+	if q.Has("plugin") {
+		return nil, errors.New("external plugin unsupported")
 	}
 	network := q.Get("type")
 	if network != "" && !contains([]string{"tcp", "raw", "ws", "websocket", "grpc", "gun", "httpupgrade", "xhttp", "splithttp", "kcp", "mkcp"}, network) {
@@ -93,7 +101,7 @@ func ParseSingle(source string) (out *conf.OutboundDetourConfig, err error) {
 	security := q.Get("security")
 	implicitTLS := (u.Scheme == "trojan" || u.Scheme == "hy2" || u.Scheme == "hysteria2") && security == ""
 	if security != "tls" && security != "reality" && !implicitTLS {
-		for _, k := range []string{"sni", "fp", "alpn", "ech", "pcs", "vcn"} {
+		for _, k := range []string{"sni", "fp", "alpn", "ech", "pcs", "vcn", "cs"} {
 			if q.Has(k) {
 				return nil, errors.New("TLS option without TLS")
 			}
@@ -128,18 +136,50 @@ func ParseSingle(source string) (out *conf.OutboundDetourConfig, err error) {
 			return nil, errors.New("irrelevant gRPC option")
 		}
 	}
-	for _, k := range []string{"mtu", "tti"} {
+	for _, k := range []string{"mtu", "tti", "seed"} {
 		if q.Has(k) && effective != "kcp" && effective != "mkcp" {
 			return nil, errors.New("irrelevant KCP option")
 		}
 	}
-	if h := q.Get("headerType"); h != "" && h != "none" && (effective != "tcp" && effective != "raw" || h != "http") {
-		return nil, errors.New("unsupported transport header")
+	if h := q.Get("headerType"); h != "" && h != "none" {
+		if effective == "kcp" || effective == "mkcp" {
+			if !contains([]string{"dns", "srtp", "utp", "wechat-video", "dtls", "wireguard"}, h) {
+				return nil, errors.New("unknown KCP header")
+			}
+		} else if (effective != "tcp" && effective != "raw") || h != "http" {
+			return nil, errors.New("irrelevant transport header")
+		}
 	}
+
 	for _, k := range []string{"path", "host"} {
 		if q.Has(k) && !contains([]string{"ws", "websocket", "httpupgrade", "xhttp", "splithttp"}, effective) && !((effective == "tcp" || effective == "raw") && q.Get("headerType") == "http") {
 			return nil, errors.New("irrelevant HTTP option")
 		}
+	}
+	if padding := q.Get("x_padding_bytes"); padding != "" {
+		if effective != "xhttp" && effective != "splithttp" {
+			return nil, errors.New("XHTTP padding without XHTTP")
+		}
+		extra := map[string]json.RawMessage{}
+		if v := q.Get("extra"); v != "" {
+			if json.Unmarshal([]byte(v), &extra) != nil {
+				return nil, errors.New("invalid XHTTP extra")
+			}
+		}
+		if value := extra["xPaddingBytes"]; value != nil {
+			var existing string
+			if json.Unmarshal(value, &existing) != nil || existing != padding {
+				return nil, errors.New("conflicting XHTTP padding")
+			}
+		} else {
+			value, _ := json.Marshal(padding)
+			extra["xPaddingBytes"] = value
+		}
+		value, _ := json.Marshal(extra)
+		q.Set("extra", string(value))
+		q.Del("x_padding_bytes")
+		u.RawQuery = q.Encode()
+		source = u.String()
 	}
 	out, err = parseOutboundShareLink(source)
 	if err != nil {
@@ -200,7 +240,7 @@ func vmessJSON(source string) (string, error) {
 		return "", errors.New("invalid vmess JSON")
 	}
 	allowed := map[string]bool{}
-	for _, k := range strings.Fields("v ps add port id aid scy net type host path tls sni alpn fp") {
+	for _, k := range strings.Fields("v ps add port id aid scy net type host path tls sni alpn fp mtu tti authority mode ech pcs vcn cs fm x_padding_bytes xPaddingBytes xPaddingObfsMode xPaddingKey xPaddingHeader xPaddingPlacement xPaddingMethod uplinkHTTPMethod sessionIDPlacement sessionIDKey sessionIDTable sessionIDLength sessionPlacement sessionKey seqPlacement seqKey uplinkDataPlacement uplinkDataKey scMaxEachPostBytes scMinPostsIntervalMs uplinkChunkSize noGRPCHeader xmux downloadSettings headers") {
 		allowed[k] = true
 	}
 	for k := range m {
@@ -224,9 +264,12 @@ func vmessJSON(source string) (string, error) {
 	}
 	u := &url.URL{Scheme: "vmess", Host: host + ":" + get("port"), User: url.User(get("id")), Fragment: get("ps")}
 	q := url.Values{}
-	for _, pair := range [][2]string{{"net", "type"}, {"scy", "encryption"}, {"host", "host"}, {"path", "path"}, {"sni", "sni"}, {"alpn", "alpn"}, {"fp", "fp"}} {
+	for _, pair := range [][2]string{{"net", "type"}, {"scy", "encryption"}, {"host", "host"}, {"path", "path"}, {"sni", "sni"}, {"alpn", "alpn"}, {"fp", "fp"}, {"ech", "ech"}, {"pcs", "pcs"}, {"vcn", "vcn"}, {"cs", "cs"}, {"authority", "authority"}, {"mode", "mode"}, {"mtu", "mtu"}, {"tti", "tti"}} {
 		if v := get(pair[0]); v != "" {
 			key := pair[1]
+			if key == "path" && (get("net") == "kcp" || get("net") == "mkcp") {
+				key = "seed"
+			}
 			if get("net") == "grpc" || get("net") == "gun" {
 				if key == "path" {
 					key = "serviceName"
@@ -239,7 +282,31 @@ func vmessJSON(source string) (string, error) {
 		}
 	}
 	if v := get("type"); v != "" && v != "none" {
-		q.Set("headerType", v)
+		if get("net") == "grpc" || get("net") == "gun" {
+			q.Set("mode", v)
+		} else {
+			q.Set("headerType", v)
+		}
+	}
+	if value := m["fm"]; len(value) > 0 {
+		q.Set("fm", string(value))
+	}
+	if get("net") == "xhttp" {
+		extra := map[string]json.RawMessage{}
+		for k, v := range m {
+			switch k {
+			case "v", "ps", "add", "port", "id", "aid", "scy", "net", "type", "host", "path", "tls", "sni", "alpn", "fp", "authority", "mode", "ech", "pcs", "vcn", "cs", "fm":
+			default:
+				if k == "x_padding_bytes" {
+					k = "xPaddingBytes"
+				}
+				extra[k] = v
+			}
+		}
+		if len(extra) > 0 {
+			b, _ := json.Marshal(extra)
+			q.Set("extra", string(b))
+		}
 	}
 	if v := get("tls"); v != "" && v != "none" {
 		q.Set("security", v)
@@ -247,3 +314,5 @@ func vmessJSON(source string) (string, error) {
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }
+
+func networkForQuery(q url.Values) string { return q.Get("type") }

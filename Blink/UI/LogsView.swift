@@ -13,12 +13,12 @@ struct LogsView: View {
             if container.logStore.entries.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "doc.text").font(.largeTitle).foregroundStyle(.secondary)
-                    Text("No logs").font(.headline)
+                    Text("Журнал пуст").font(.headline)
                 }
             }
         }
-        .navigationTitle("Logs")
-        .toolbar { Button("Clear", action: container.logStore.clear) }
+        .navigationTitle("Журнал").blinkScreen()
+        .toolbar { Button("Очистить", action: container.logStore.clear) }
     }
     private func color(_ level: LogEntry.Level) -> Color { switch level { case .info: .blue; case .warning: .orange; case .error: .red } }
 }

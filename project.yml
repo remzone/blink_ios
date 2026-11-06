@@ -77,6 +77,7 @@ targets:
       - path: Blink/Models/UniversalProfile.swift
       - path: Blink/Models/SharedConstants.swift
       - path: Blink/Storage/SecretStore.swift
+      - path: Blink/Storage/NativeResources.swift
     dependencies:
       - framework: Native/dist/BlinkCore.xcframework
         embed: false

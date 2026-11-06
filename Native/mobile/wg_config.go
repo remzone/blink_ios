@@ -16,7 +16,7 @@ import (
 type wgPeer struct {
 	Key, PSK, Endpoint string
 	Allowed            []string
-	Keepalive          int
+	Keepalive          string
 }
 type wgConfig struct {
 	Private                string
@@ -67,6 +67,10 @@ func parseWG(source string) (wgConfig, error) {
 		}
 		key, value, ok := strings.Cut(line, "=")
 		key = strings.ToLower(strings.TrimSpace(key))
+		aliases := map[string]string{"headerprotectionkey": "header_protection_key", "contentpaddingaddition": "content_padding_addition", "rekeyaftertime": "rekey_after_time", "rekeytimeout": "rekey_timeout", "rejectaftertime": "reject_after_time", "keepalivetimeout": "keepalive_timeout", "maxhandshakeattempts": "max_handshake_attempts", "randomtrailers": "random_trailers", "disablecookies": "disable_cookies"}
+		if canonical, ok := aliases[key]; ok {
+			key = canonical
+		}
 		value = strings.TrimSpace(value)
 		if !ok || section == "" || seen[key] || len(value) > 4096 {
 			return c, errors.New("invalid or duplicate conf key")
@@ -109,6 +113,28 @@ func parseWG(source string) (wgConfig, error) {
 				if strings.ContainsAny(value, "\r\n\x00") {
 					return c, errors.New("invalid Amnezia parameter")
 				}
+				if key == "random_trailers" || key == "disable_cookies" {
+					switch strings.ToLower(value) {
+					case "on":
+						value = "true"
+					case "off":
+						value = "false"
+					}
+					if _, err := strconv.ParseBool(value); err != nil {
+						return c, errors.New("invalid AWG boolean")
+					}
+				}
+				if key == "header_protection_key" {
+					if raw, e := hex.DecodeString(value); e == nil && len(raw) == 32 {
+						value = hex.EncodeToString(raw)
+					} else {
+						var e error
+						value, e = wgKey(value)
+						if e != nil {
+							return c, errors.New("invalid AWG header protection key")
+						}
+					}
+				}
 				c.Amnezia[key] = value
 			}
 		} else {
@@ -143,11 +169,19 @@ func parseWG(source string) (wgConfig, error) {
 					c.Routes = append(c.Routes, a.Masked().String())
 				}
 			case "persistentkeepalive":
-				n, e := strconv.Atoi(value)
-				if e != nil || n < 0 || n > 65535 {
+				parts := strings.Split(value, "-")
+				if len(parts) > 2 {
 					return c, errors.New("invalid keepalive")
 				}
-				p.Keepalive = n
+				previous := -1
+				for _, part := range parts {
+					n, e := strconv.Atoi(part)
+					if e != nil || n < 0 || n > 65535 || n < previous {
+						return c, errors.New("invalid keepalive")
+					}
+					previous = n
+				}
+				p.Keepalive = value
 			default:
 				return c, errors.New("unsupported peer option")
 			}
@@ -170,9 +204,16 @@ func parseWG(source string) (wgConfig, error) {
 	for _, value := range c.Routes {
 		p, _ := netip.ParsePrefix(value)
 		if !family[p.Addr().Is6()] {
-			return c, errors.New("AllowedIPs family needs an interface address")
+			continue
 		}
 		prefixes = append(prefixes, p)
+	}
+	c.Routes = nil
+	for _, p := range prefixes {
+		c.Routes = append(c.Routes, p.String())
+	}
+	if len(c.Routes) == 0 {
+		return c, errors.New("no routes for configured interface family")
 	}
 	if len(c.DNS) == 0 {
 		c.DNS = []string{"1.1.1.1"}
@@ -227,7 +268,7 @@ func (c wgConfig) uapi() (string, error) {
 		if e != nil {
 			return "", e
 		}
-		fmt.Fprintf(&b, "public_key=%s\nendpoint=%s\nreplace_allowed_ips=true\npersistent_keepalive_interval=%d\n", p.Key, net.JoinHostPort(ip, port), p.Keepalive)
+		fmt.Fprintf(&b, "public_key=%s\nendpoint=%s\nreplace_allowed_ips=true\npersistent_keepalive_interval=%s\n", p.Key, net.JoinHostPort(ip, port), keepalive(p.Keepalive))
 		if p.PSK != "" {
 			fmt.Fprintf(&b, "preshared_key=%s\n", p.PSK)
 		}
@@ -236,4 +277,11 @@ func (c wgConfig) uapi() (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func keepalive(s string) string {
+	if s == "" {
+		return "0"
+	}
+	return s
 }

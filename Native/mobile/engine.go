@@ -21,6 +21,7 @@ import (
 	_ "github.com/xtls/xray-core/app/policy"
 	_ "github.com/xtls/xray-core/app/proxyman/inbound"
 	_ "github.com/xtls/xray-core/app/proxyman/outbound"
+	"github.com/xtls/xray-core/common/session"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf/serial"
 	"github.com/xtls/xray-core/proxy/tun"
@@ -132,6 +133,9 @@ func Start(profileJSON string, sink PacketWriter, protector Protector) (*Engine,
 	return startConfig(raw, sink, protector)
 }
 func startConfig(raw []byte, sink PacketWriter, protector Protector) (*Engine, error) {
+	return startConfigOptions(raw, sink, protector, packetOptions{})
+}
+func startConfigOptions(raw []byte, sink PacketWriter, protector Protector, opt packetOptions) (*Engine, error) {
 	lifecycle.Lock()
 	defer lifecycle.Unlock()
 	if active != nil {
@@ -140,7 +144,10 @@ func startConfig(raw []byte, sink PacketWriter, protector Protector) (*Engine, e
 	if sink == nil || protector == nil {
 		return nil, errors.New("packet writer and protector required")
 	}
-	raw, err := withProxyDNS(raw)
+	var err error
+	if !opt.PreserveDNS {
+		raw, err = withProxyDNS(raw)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +170,8 @@ func startConfig(raw []byte, sink PacketWriter, protector Protector) (*Engine, e
 		}
 	}()
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = session.ContextWithInbound(ctx, &session.Inbound{Tag: opt.Tag})
+	ctx = session.ContextWithContent(ctx, &session.Content{SniffingRequest: opt.Sniffing})
 	instance, err := core.NewWithContext(ctx, config)
 	if err != nil {
 		cancel()
@@ -171,7 +180,7 @@ func startConfig(raw []byte, sink PacketWriter, protector Protector) (*Engine, e
 	fail := func() { cancel(); _ = instance.Close() }
 	// Construct the supported registered handler without calling Handler.Start,
 	// which would create an OS TUN. We own the public packet-oriented stack.
-	handler, err := core.CreateObject(instance, &tun.Config{MTU: 1280})
+	handler, err := core.CreateObject(instance, &tun.Config{MTU: 1280, UserLevel: opt.Level})
 	if err != nil {
 		fail()
 		return nil, errors.New("packet handler initialization failed")
@@ -182,7 +191,7 @@ func startConfig(raw []byte, sink PacketWriter, protector Protector) (*Engine, e
 		return nil, errors.New("unsupported Xray handler API")
 	}
 	adapter := &packetAdapter{sink: sink}
-	stack, err := tun.NewStack(ctx, tun.StackOptions{Tun: adapter, MTU: 1280}, connectionHandler)
+	stack, err := tun.NewStack(ctx, tun.StackOptions{Tun: adapter, MTU: 1280, IdleTimeout: opt.Idle}, connectionHandler)
 	if err != nil {
 		fail()
 		return nil, errors.New("packet stack initialization failed")

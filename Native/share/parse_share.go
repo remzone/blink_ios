@@ -78,6 +78,8 @@ func parseOutboundShareLink(text string) (*conf.OutboundDetourConfig, error) {
 
 func (proxy xrayShareLink) outbound() (*conf.OutboundDetourConfig, error) {
 	switch proxy.link.Scheme {
+	case "http", "https":
+		return proxy.httpOutbound()
 	case "ss":
 		return proxy.shadowsocksOutbound()
 	case "vmess":
@@ -309,4 +311,31 @@ func (proxy xrayShareLink) trojanOutbound() (*conf.OutboundDetourConfig, error) 
 	}
 	outbound.StreamSetting = streamSettings
 	return outbound, nil
+}
+
+func (proxy xrayShareLink) httpOutbound() (*conf.OutboundDetourConfig, error) {
+	u := proxy.link
+	port, e := strconv.Atoi(u.Port())
+	if e != nil {
+		return nil, e
+	}
+	settings := &conf.HTTPClientConfig{Address: parseAddress(u.Hostname()), Port: uint16(port)}
+	if u.User != nil {
+		settings.Username = u.User.Username()
+		settings.Password, _ = u.User.Password()
+	}
+	raw, e := convertJsonToRawMessage(settings)
+	if e != nil {
+		return nil, e
+	}
+	out := &conf.OutboundDetourConfig{Protocol: "http", Settings: &raw}
+	out.StreamSetting, e = proxy.streamSettings(u)
+	if u.Scheme == "https" {
+		if out.StreamSetting == nil {
+			out.StreamSetting = &conf.StreamConfig{}
+		}
+		out.StreamSetting.Security = "tls"
+		out.StreamSetting.TLSSettings = &conf.TLSConfig{ServerName: u.Hostname()}
+	}
+	return out, e
 }

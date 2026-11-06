@@ -5,11 +5,12 @@ import BlinkCore
 
 @MainActor
 final class XrayVPNController: ObservableObject {
-    @Published private(set) var status = "Disconnected"
+    @Published private(set) var status = "Отключён"
     @Published private(set) var busy = false
     @Published private(set) var errorMessage: String?
     let authorization = VKPreflightAuthorizer()
     @Published private(set) var profileName = "Выберите VPN-профиль"
+    var isConnected: Bool { manager?.connection.status == .connected }
     private var operation = UUID()
     private var manager: NETunnelProviderManager?
     private var observer: NSObjectProtocol?
@@ -32,17 +33,18 @@ final class XrayVPNController: ObservableObject {
             let profile = try XrayProfile.parse(link)
             await connect(json: try profile.json(), mode: "direct", server: profile.address, secrets: secrets)
         } catch let error as XrayProfileError { errorMessage = error.localizedDescription }
-        catch { errorMessage = "Unable to read the VLESS profile." }
+        catch { errorMessage = "Не удалось прочитать VLESS-профиль." }
     }
 
     func connect(profile: XrayProfile, secrets: SecretStore) async {
         do { await connect(json: try profile.json(), mode: "direct", server: profile.address, secrets: secrets) }
-        catch { errorMessage = "Unable to encode the VLESS profile." }
+        catch { errorMessage = "Не удалось сохранить VLESS-профиль." }
     }
 
     func connectUniversal(source: String, name: String, secrets: SecretStore) async {
         guard !busy else { return }
         do {
+            try NativeResources.prepare()
             var nativeError: NSError?
             let metadata = MobileImportProfile(source, &nativeError)
             guard nativeError == nil else { throw UniversalProfileError.invalid }
@@ -93,7 +95,7 @@ final class XrayVPNController: ObservableObject {
             let manager = managers.first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == SharedConstants.xrayTunnelBundleIdentifier } ?? NETunnelProviderManager()
             // Do not overwrite credentials underneath a running extension.
             guard [.invalid, .disconnected].contains(manager.connection.status) else {
-                errorMessage = "Disconnect the current Xray tunnel before choosing another profile."; return
+                errorMessage = "Сначала отключите текущий VPN."; return
             }
             try secrets.save(json, profileID: credentialID, kind: .xrayProfile)
             let configuration = NETunnelProviderProtocol()
@@ -112,14 +114,14 @@ final class XrayVPNController: ObservableObject {
             self.manager = manager
             try manager.connection.startVPNTunnel()
             consume(manager.connection.status)
-        } catch { errorMessage = "Unable to save or start the VPN configuration. Check VPN permission and provisioning." }
+        } catch { errorMessage = "Не удалось запустить VPN. Проверьте разрешение и профиль." }
     }
 
     func disconnect() {
         operation = UUID()
         authorization.cancel(); busy = false
         manager?.connection.stopVPNTunnel()
-        status = manager == nil ? "Disconnected" : "Disconnecting…"
+        status = manager == nil ? "Отключён" : "Отключение…"
     }
 
     func refreshTransportStatus() async {
@@ -138,11 +140,11 @@ final class XrayVPNController: ObservableObject {
                               let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                               let engine = object["engine"] else { return }
                         switch engine {
-                        case "ready": self.status = "VPN active · VK transport ready"
-                        case "connecting": self.status = "VPN active · VK transport connecting"
+                        case "ready": self.status = "VPN подключён · VK готов"
+                        case "connecting": self.status = "VPN подключён · восстановление VK"
                         case "captcha_required": self.status = "VK требует новую проверку. Отключите VPN и подключитесь из приложения."
-                        case "stopped": self.status = "Engine stopped — disconnect and refresh subscription"
-                        default: self.status = "VPN active · Xray running (connectivity not verified)"
+                        case "stopped": self.status = "Соединение остановлено. Переподключитесь или обновите подписку."
+                        default: self.status = "VPN настроен · доступ в интернет ещё не проверен"
                         }
                     }
                 }
@@ -158,14 +160,14 @@ final class XrayVPNController: ObservableObject {
             guard !busy, manager == nil else { return }
             manager = restored
             if let manager { consume(manager.connection.status) }
-        } catch { errorMessage = "Unable to restore VPN preferences." }
+        } catch { errorMessage = "Не удалось восстановить настройки VPN." }
     }
     private func consume(_ state: NEVPNStatus) {
         switch state {
-        case .connected: status = "VPN active (connectivity not verified)"
-        case .connecting, .reasserting: status = "Connecting…"
-        case .disconnecting: status = "Disconnecting…"
-        default: status = "Disconnected"
+        case .connected: status = "VPN подключён · проверьте интернет"
+        case .connecting, .reasserting: status = "Подключение…"
+        case .disconnecting: status = "Отключение…"
+        default: status = "Отключён"
         }
     }
 }

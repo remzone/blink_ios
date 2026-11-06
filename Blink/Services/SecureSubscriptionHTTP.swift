@@ -2,7 +2,7 @@ import Foundation
 
 /// Shared bounded HTTPS transport. Token URLs never enter errors, logs or caches.
 final class SecureSubscriptionHTTP: NSObject, URLSessionTaskDelegate {
-    static let maximumBytes = 128 * 1024
+    static let maximumBytes = 1024 * 1024
     static func validatedURL(_ value: String) throws -> URL {
         guard value.utf8.count <= 4096,
               let c = URLComponents(string: value), c.scheme == "https",

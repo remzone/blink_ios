@@ -6,6 +6,7 @@ struct UniversalProfilesView: View {
     @EnvironmentObject private var xray: XrayVPNController
     @State private var profiles: [UniversalProfile] = []
     @State private var input = ""
+    @State private var search = ""
     @State private var message: String?
     @State private var importing = false
     @State private var filePresented = false
@@ -18,7 +19,7 @@ struct UniversalProfilesView: View {
                 SecureField("URI или HTTPS-подписка", text: $input).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button(importing ? "Импорт…" : "Импортировать") { importText(input) }.disabled(importing || input.isEmpty)
                 Button("Импортировать .conf или текстовый файл") { filePresented = true }.disabled(importing)
-                Text("VLESS, VMess, Trojan, Shadowsocks, SOCKS, Hysteria2, WireGuard и AmneziaWG. Обычные профили работают без VK и CAPTCHA.").font(.caption).foregroundStyle(.secondary)
+                Text("VLESS, VMess, Trojan, Shadowsocks, HTTP/SOCKS, Hysteria, TUIC, MASQUE JSON, WireGuard и AmneziaWG. Обычные профили работают без VK и CAPTCHA.").font(.caption).foregroundStyle(.secondary)
                 if let message { Text(message).foregroundStyle(.secondary) }
             }
             Section("VPN-подписки") {
@@ -28,7 +29,7 @@ struct UniversalProfilesView: View {
             }
             Section("Профили") {
                 if profiles.isEmpty { Text("Импортируйте ссылку, подписку или конфигурацию WireGuard/AmneziaWG.").foregroundStyle(.secondary) }
-                ForEach(profiles) { profile in
+                ForEach(profiles.filter { search.isEmpty || ($0.name + " " + $0.kind).localizedCaseInsensitiveContains(search) }) { profile in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(profile.name).font(.headline).textSelection(.enabled)
                         Text(profile.kind.uppercased()).font(.caption).foregroundStyle(.secondary)
@@ -47,17 +48,18 @@ struct UniversalProfilesView: View {
                 Button("Отключить", role: .destructive) { xray.disconnect() }
                 Text("Системный статус VPN не подтверждает доступ к интернету. Для Xray используется IPv4; IPv6 из явной конфигурации WireGuard требует отдельной проверки сервера.").font(.caption).foregroundStyle(.secondary)
             }
-        }.navigationTitle("VPN-профили")
+        }.navigationTitle("VPN-профили").blinkScreen()
+        .searchable(text: $search, prompt: "Страна или название сервера")
         .task { load() }
         .fileImporter(isPresented: $filePresented, allowedContentTypes: [.data, .plainText, .json]) { result in
             do {
                 let url = try result.get(); let granted = url.startAccessingSecurityScopedResource()
                 defer { if granted { url.stopAccessingSecurityScopedResource() } }
                 let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
-                let data = try handle.read(upToCount: 131073) ?? Data()
-                guard data.count <= 131072, let text = String(data: data, encoding: .utf8) else { throw UniversalProfileError.invalid }
+                let data = try handle.read(upToCount: 1048577) ?? Data()
+                guard data.count <= 1048576, let text = String(data: data, encoding: .utf8) else { throw UniversalProfileError.invalid }
                 importText(text)
-            } catch { message = "Файл не прочитан или превышает 128 КБ." }
+            } catch { message = "Файл не прочитан или превышает 1 МБ." }
         }
         .onDisappear { input = ""; importID = UUID(); importTask?.cancel(); importing = false }
     }
@@ -67,21 +69,21 @@ struct UniversalProfilesView: View {
             defer { if importID == id { importing = false } }
             do {
                 var text = source; var subscriptionURL: String?
-                if source.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("https://") {
+                if source.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("https://"), URLComponents(string: source.trimmingCharacters(in: .whitespacesAndNewlines))?.user == nil {
                     subscriptionURL = source.trimmingCharacters(in: .whitespacesAndNewlines)
                     let data = try await SecureSubscriptionHTTP().fetch(subscriptionURL!)
                     guard let value = String(data: data, encoding: .utf8) else { throw UniversalProfileError.invalid }; text = value
                 }
                 try Task.checkCancellation()
                 guard importID == id else { return }
-                var (added, rejected) = try UniversalProfile.imported(text)
+                var (added, rejected, notice) = try UniversalProfile.imported(text)
                 if let url = subscriptionURL { for i in added.indices { added[i].subscriptionURL = url } }
                 let retained = subscriptionURL.map { url in profiles.filter { $0.subscriptionURL != url } } ?? profiles
-                guard retained.count + added.count <= 256 else { throw UniversalProfileError.invalid }
+                guard retained.count + added.count <= 1024 else { throw UniversalProfileError.invalid }
                 let next = retained + added; let data = try JSONEncoder().encode(next)
-                guard data.count <= 524288 else { throw UniversalProfileError.invalid }
+                guard data.count <= 4194304 else { throw UniversalProfileError.invalid }
                 try container.secretStore.save(String(decoding: data, as: UTF8.self), profileID: vaultID, kind: .universalProfiles)
-                profiles = next; input = ""; message = "Добавлено: \(added.count). Отклонено: \(rejected)."
+                profiles = next; input = ""; message = "Добавлено: \(added.count). Отклонено: \(rejected). \(notice)"
             } catch is CancellationError { }
             catch { if importID == id { message = "Импорт не выполнен. Проверьте протокол, настройки и HTTPS-подписку." } }
         }

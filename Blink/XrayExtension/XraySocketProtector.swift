@@ -3,7 +3,7 @@ import Network
 import BlinkCore
 import Darwin
 
-final class XraySocketProtector: NSObject, MobileProtectorProtocol {
+final class XraySocketProtector: NSObject, MobileProtectorProtocol, @unchecked Sendable {
     private static let ipBoundIf: Int32 = 25
     private static let ipv6BoundIf: Int32 = 125
     private var monitor: NWPathMonitor?

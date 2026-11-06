@@ -12,34 +12,34 @@ struct SubscriptionView: View {
     @State private var loading = false
     @State private var task: Task<Void, Never>?
     @State private var lastURL = ""
-    @State private var highestRevision: Int64 = 0
+    @State private var highestВерсия: Int64 = 0
     @State private var requestID = UUID()
     private let credentialID = UUID(uuidString: "57f8b06a-c211-4b4f-8525-14cb2e7a882e")!
 
     var body: some View {
         List {
-            Section("Panel subscription") {
+            Section("Подписка Vokop") {
                 Picker("VK TURN", selection: $transport) { Text("TCP").tag("tcp"); Text("UDP").tag("udp") }.disabled(xray.busy)
-                TextField("VK bootstrap DNS IP", text: $bootstrapDNS)
+                TextField("DNS для авторизации VK", text: $bootstrapDNS)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
-                Text("VK bootstrap DNS queries go outside the VPN through this explicit resolver (default 1.1.1.1). Use an IPv4 or IPv6 address, not a hostname.")
+                Text("Для авторизации VK до запуска VPN используется этот DNS. Укажите IP резолвера.")
                     .font(.caption).foregroundStyle(.secondary)
-                SecureField("HTTPS subscription link", text: $link)
+                SecureField("HTTPS-ссылка подписки", text: $link)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .disabled(loading)
-                Button(loading ? "Loading…" : "Save link and preview") { refresh() }
+                Button(loading ? "Загрузка…" : "Обновить подписку") { refresh() }
                     .disabled(loading || link.isEmpty)
-                Button("Forget subscription", role: .destructive) { forget() }
+                Button("Забыть подписку", role: .destructive) { forget() }
                 if let message { Text(message).foregroundStyle(.secondary) }
             }
             if let document {
-                Section("Subscription preview") {
-                    LabeledContent("Revision", value: String(document.revision))
-                    LabeledContent("Expires", value: Date(timeIntervalSince1970: TimeInterval(document.expires_at)).formatted())
+                Section("Профили подписки") {
+                    LabeledContent("Версия", value: String(document.revision))
+                    LabeledContent("Действует до", value: Date(timeIntervalSince1970: TimeInterval(document.expires_at)).formatted())
                     ForEach(document.profiles) { profile in
                         VStack(alignment: .leading) {
                             Text(profile.name.isEmpty ? profile.id : profile.name)
-                            Button("Connect using VK TURN") {
+                            Button("Подключить через VK TURN") {
                                 Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, transport: transport, secrets: container.secretStore) }
                             }.disabled(xray.busy)
                             Text("VLESS / VK TURN · \(profile.turn.peer_host):\(profile.turn.peer_port)")
@@ -48,34 +48,34 @@ struct SubscriptionView: View {
                     }
                 }
             }
-            Section("Connection support") {
+            Section("Соединение") {
                 NavigationLink("Обычные VPN-профили · без VK") { UniversalProfilesView() }
                 Text(xray.status)
                 if let error = xray.errorMessage { Text(error).foregroundStyle(.red) }
-                Button("Check transport status") { Task { await xray.refreshTransportStatus() } }
-                Button("Disconnect Xray", role: .destructive) { xray.disconnect() }
-                Text("Vokop и обычные VPN-профили используют одно расширение BlinkCore. Сборка iOS и проверка на устройстве ещё не выполнялись.")
-                Text("VK compatibility mode does not authenticate the DTLS server certificate; inner VLESS is not TLS-protected. It is not equivalent to authenticated end-to-end TLS. Use application HTTPS and review this limitation before production use.")
+                Button("Проверить состояние") { Task { await xray.refreshTransportStatus() } }
+                Button("Отключить", role: .destructive) { xray.disconnect() }
+                Text("Выберите профиль подписки и транспорт до VK: TCP или UDP.")
+                Text("Экспериментальный VK-транспорт не проверяет сертификат DTLS-сервера. Используйте HTTPS в приложениях.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("Обычные ссылки и подписки Xray/WireGuard/AmneziaWG импортируются в разделе VPN-профили.")
             }
-            Section("Balance") {
-                Text("Check /balance in your administrator’s Telegram bot. The panel does not yet expose a mobile account/balance API. Never enter an administrator password in this app.")
+            Section("Баланс") {
+                Text("Баланс доступен командой /balance в Telegram-боте панели. В клиент вводится только ссылка подписки.")
             }
         }
-        .navigationTitle("Vokop")
+        .navigationTitle("Vokop").blinkScreen()
         .onAppear {
             guard link.isEmpty else { return }
             do {
                 let saved = try container.secretStore.read(profileID: credentialID, kind: .subscriptionURL) ?? ""
                 if let state = try? JSONDecoder().decode(SavedVokopSubscription.self, from: Data(saved.utf8)) {
-                    link = state.url; lastURL = state.url; highestRevision = state.highestRevision
+                    link = state.url; lastURL = state.url; highestВерсия = state.highestВерсия
                 } else {
                     // One-time compatibility with the earlier URL-only Keychain value.
-                    link = saved; lastURL = saved; highestRevision = 0
+                    link = saved; lastURL = saved; highestВерсия = 0
                 }
             }
-            catch { message = "Could not read the saved link from Keychain." }
+            catch { message = "Не удалось прочитать сохранённую подписку." }
         }
         .onDisappear {
             requestID = UUID(); task?.cancel(); task = nil; loading = false
@@ -87,35 +87,35 @@ struct SubscriptionView: View {
         task?.cancel()
         let id = UUID(); requestID = id
         let requestedURL = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        let minimumRevision = requestedURL == lastURL ? highestRevision : 0
+        let minimumВерсия = requestedURL == lastURL ? highestВерсия : 0
         document = nil; message = nil; loading = true
         task = Task { @MainActor in
             defer { if requestID == id { loading = false } }
             do {
                 _ = try VokopSubscriptionClient.validatedURL(requestedURL)
-                let result = try await VokopSubscriptionClient().fetch(requestedURL, minimumRevision: minimumRevision)
+                let result = try await VokopSubscriptionClient().fetch(requestedURL, minimumВерсия: minimumВерсия)
                 try Task.checkCancellation()
                 guard requestID == id else { return }
-                let state = SavedVokopSubscription(url: requestedURL, highestRevision: result.revision)
+                let state = SavedVokopSubscription(url: requestedURL, highestВерсия: result.revision)
                 let encoded = String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
                 try container.secretStore.save(encoded, profileID: credentialID, kind: .subscriptionURL)
-                document = result; lastURL = requestedURL; link = requestedURL; highestRevision = result.revision
+                document = result; lastURL = requestedURL; link = requestedURL; highestВерсия = result.revision
             } catch is CancellationError {
                 // Dismissal/Forget must not repopulate a cleared screen.
             } catch let error as SubscriptionError {
                 if requestID == id { message = error.localizedDescription }
             } catch {
-                if requestID == id { message = "Could not save the link securely in Keychain." }
+                if requestID == id { message = "Не удалось сохранить подписку." }
             }
         }
     }
 
     private func forget() {
         requestID = UUID(); task?.cancel(); task = nil
-        document = nil; lastURL = ""; highestRevision = 0; link = ""; loading = false
+        document = nil; lastURL = ""; highestВерсия = 0; link = ""; loading = false
         do {
             try container.secretStore.delete(profileID: credentialID)
-            message = "Saved subscription removed."
-        } catch { message = "Could not remove the saved subscription from Keychain." }
+            message = "Подписка удалена."
+        } catch { message = "Не удалось удалить подписку." }
     }
 }

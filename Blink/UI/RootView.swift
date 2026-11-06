@@ -22,7 +22,7 @@ struct RootView: View {
                     ForEach(BlinkScreen.allCases) { screen in NavigationStack { destination(screen) }.tabItem { Label(screen.rawValue, systemImage: screen.icon) } }
                 }
             }
-        }.tint(.blue)
+        }.tint(BlinkTheme.accent)
         .sheet(item: $authorizer.legacy, onDismiss: { authorizer.cancelLegacy() }) { challenge in LegacyVKCaptchaView(challenge: challenge) }
         .onChange(of: phase) { if $0 == .background { authorizer.cancel() } }
     }

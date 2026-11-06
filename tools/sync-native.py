@@ -14,9 +14,9 @@ target = root / 'Native'
 old = b'github.com/remzone/blink-android/native'
 new = b'github.com/remzone/blink_ios/native'
 files = [Path('go.mod'), Path('go.sum'), Path('LICENSE')]
-for folder in ('mobile', 'vkturn', 'share'):
+for folder in ('mobile', 'vkturn', 'share', 'resources'):
     files += [p.relative_to(source) for p in (source / folder).rglob('*')
-              if p.is_file() and (p.suffix == '.go' or p.name in ('LICENSE', 'UPSTREAM.md'))]
+              if p.is_file() and (p.suffix == '.go' or p.name in ('LICENSE', 'UPSTREAM.md') or p.suffix == '.dat' or (p.suffix == '.json' and 'testdata' in p.parts))]
 drift = []
 for relative in sorted(files):
     data = (source / relative).read_bytes().replace(old, new)
@@ -26,7 +26,7 @@ for relative in sorted(files):
         if not args.check:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
-for folder in ('mobile', 'vkturn', 'share'):
+for folder in ('mobile', 'vkturn', 'share', 'resources'):
     for p in (target / folder).rglob('*.go'):
         if p.relative_to(target) not in files:
             drift.append('stale ' + str(p.relative_to(target)))

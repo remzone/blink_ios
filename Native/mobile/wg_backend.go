@@ -89,7 +89,11 @@ func startWireGuard(p ImportedProfile, sink PacketWriter, protector Protector) (
 	if active != nil || sink == nil || protector == nil {
 		return nil, errors.New("invalid or active VPN engine")
 	}
-	c, e := parseWG(p.Source)
+	source, _, e := unwrapWG(p.Source)
+	if e != nil {
+		return nil, e
+	}
+	c, e := parseWG(source)
 	if e != nil {
 		return nil, e
 	}

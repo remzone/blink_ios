@@ -3,13 +3,13 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         List {
-            NavigationLink { LogsView() } label: { Label("Logs", systemImage: "doc.text.magnifyingglass") }
-            Section("About") {
-                LabeledContent("App", value: "Blink")
-                LabeledContent("Tunnel", value: "Xray / WireGuard / AmneziaWG / VK TURN")
-                LabeledContent("Minimum iOS", value: "16.0")
+            NavigationLink { LogsView() } label: { Label("Журнал", systemImage: "doc.text.magnifyingglass") }
+            Section("О приложении") {
+                LabeledContent("Приложение", value: "Blink")
+                LabeledContent("Протоколы", value: "Xray / WireGuard / AmneziaWG / VK TURN")
+                LabeledContent("Минимальная iOS", value: "16.0")
             }
-            Section { Text("Secrets remain in the shared iOS Keychain and are never included in exported JSON or logs.").foregroundStyle(.secondary) }
-        }.navigationTitle("Settings")
+            Section { Text("Ссылки подписок и конфигурации хранятся в защищённом хранилище устройства.").foregroundStyle(.secondary) }
+        }.navigationTitle("Настройки").blinkScreen()
     }
 }

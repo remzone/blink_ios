@@ -14,7 +14,7 @@ struct LegacyVKCaptchaView: View {
                     SecureField("Код с изображения", text: $code).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Продолжить") { authorizer.submitLegacy(code) }.disabled(code.isEmpty || image == nil)
                 }
-            }.navigationTitle("Проверка VK").toolbar { Button("Отмена", role: .cancel) { authorizer.cancelLegacy() } }
+            }.navigationTitle("Проверка VK").blinkScreen().toolbar { Button("Отмена", role: .cancel) { authorizer.cancelLegacy() } }
         }.task(id: challenge.id) {
             let configuration = URLSessionConfiguration.ephemeral; configuration.urlCache = nil; configuration.httpCookieStorage = nil
             let session = URLSession(configuration: configuration, delegate: SecureSubscriptionHTTP(), delegateQueue: nil); defer { session.invalidateAndCancel() }

@@ -44,6 +44,7 @@ func (proxy xrayShareLink) parseSecurityFromURL(link *url.URL, streamSettings *c
 	realitySettings.ServerName = sni
 
 	tlsSettings.ECHConfigList = query.Get("ech")
+	tlsSettings.CipherSuites = query.Get("cs")
 	tlsSettings.PinnedPeerCertSha256 = query.Get("pcs")
 	tlsSettings.VerifyPeerCertByName = query.Get("vcn")
 

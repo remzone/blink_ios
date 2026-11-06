@@ -16,8 +16,7 @@ not establish iOS runtime compatibility. The user requested source-only iOS work
 ## Packet and configuration paths
 
 - `UniversalProfilesView` → bounded native URI/INI validator → shared Keychain.
-  HTTPS feed refresh replaces only nodes belonging to that feed. Imports cannot
-  inject arbitrary Xray JSON or scripts. Unknown parameters are rejected.
+  HTTPS feed refresh replaces only nodes belonging to that feed. Xray JSON imports preserve routing/DNS/mux/policy/sniffing and streamSettings; desktop listeners are replaced by the packet stack. External files, API/reverse and socket overrides are rejected. Clash imports nodes only, with an explicit notice that groups/rules/DNS are not applied. Unknown parameters are rejected.
 - `XrayVPNController` revalidates the source and refuses to replace a running
   extension's credentials. Provider preferences contain only UUID and mode.
 - `XrayPacketTunnelProvider` uses public `packetFlow.readPackets/writePackets`.
@@ -30,18 +29,17 @@ not establish iOS runtime compatibility. The user requested source-only iOS work
   between physical interfaces is not implemented; reconnect manually.
 - Transport readiness is distinct from remote handshake or actual internet.
   Generic core `running` means initialized. The source UI says connectivity is
-  unverified. Android has a real HTTPS probe; iOS transport status is not one.
+  unverified. Both source UIs expose separate HTTPS probes; only Android has device validation. iOS diagnostics call native ProbeInternet and remain unverified on Apple devices.
 
 ## Routing and DNS
 
-Xray/VK install IPv4 only, MTU1280 and DNS 1.1.1.1. Native routing intercepts
+Xray/VK install IPv4 only, MTU1280 and DNS 1.1.1.1. User Xray JSON retains its own DNS/routing and does not receive the following URI/VK DNS override. Native routing intercepts
 port53 UDP/TCP, forwards DNS using TCP through the selected proxy and returns
 empty AAAA. No direct/freedom DNS fallback is added. DoH/DoT application traffic
 is not rewritten. Endpoint/bootstrap resolution happens in the physical network.
 
 WG/AWG take Address, AllowedIPs, DNS IP and MTU from `.conf`; explicit IPv6 is
-supported by the source model. The parser requires an interface family for each
-route and a route/family covering each DNS server. If DNS is omitted, the default
+supported by the source model. Routes for a family absent from Address are filtered; each DNS server still requires an interface family and covering route. If DNS is omitted, the default
 1.1.1.1 must be routable. At most16 peers, MTU1280–9000, Jc≤128 and
 Jmin/Jmax/S1–S4≤1280. Desktop configs outside these bounds are rejected.
 
@@ -117,3 +115,11 @@ Still pending on iOS: generate/build with Xcode, framework symbols and SDK/Swift
 compatibility, provisioning, actual packet/TLS/DNS paths, IPv4/IPv6 leakage,
 full/split routing, Wi-Fi/cellular transitions, app suspension/extension memory,
 battery and reconnects, CAPTCHA presentation and all visual/accessibility checks.
+
+## 0.5.0 source additions
+
+The shared native mirror adds TUIC/Hysteria1 (official sing-quic v0.7.1, GPL-3.0-or-later), bounded yaml.v3 node import (v3.0.1 MIT/Apache-2.0), panel URI adapters, Xray JSON and bundled geodata with source/license hashes in Native/resources/UPSTREAM.md. NativeResources prepares private cached assets in both app and extension. The panel exporter contract fixture contains synthetic credentials only.
+
+NetworkDiagnostics and DiagnosticsView separate physical IP from tunnel IP and Google/YouTube HTTPS204 probes. A direct probe requires XraySocketProtector; tunnel probes require an active connected extension before/after the call. No automatic direct fallback. NSCondition protects the socket protector's shared state, annotated unchecked Sendable; actual Apple interface binding and concurrency still need device testing.
+
+46 Swift files pass syntax parsing and static project guards; no Swift type checking, iOS build or device tests. Android results do not validate Apple NetworkExtension, signing, UI layout or NE routing. See [protocol boundaries](PROTOCOLS.md).
