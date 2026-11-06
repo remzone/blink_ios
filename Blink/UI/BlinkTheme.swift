@@ -3,8 +3,9 @@ import UIKit
 
 /// Shared design tokens. System typography keeps every screen scalable.
 enum BlinkTheme {
-    static let accent = Color(red: 0.36, green: 0.83, blue: 0.71)
-    static let ice = Color(red: 0.61, green: 0.75, blue: 1)
+    static let accent = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.36, green: 0.83, blue: 0.71, alpha: 1) : UIColor(red: 0, green: 0.43, blue: 0.36, alpha: 1) })
+    static let primaryFill = Color(red: 0.58, green: 0.91, blue: 0.82)
+    static let ice = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.61, green: 0.75, blue: 1, alpha: 1) : UIColor(red: 0.18, green: 0.36, blue: 0.64, alpha: 1) })
     static let background = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.03, green: 0.05, blue: 0.09, alpha: 1) : UIColor(red: 0.94, green: 0.96, blue: 0.98, alpha: 1) })
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
     static let stroke = Color.primary.opacity(0.08)
@@ -35,7 +36,7 @@ struct BlinkActionStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.headline).frame(maxWidth: .infinity, minHeight: 24, alignment: .leading).padding(18)
             .foregroundStyle(prominent ? Color(red: 0.025, green: 0.09, blue: 0.10) : Color.primary)
-            .background(prominent ? BlinkTheme.accent : BlinkTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(prominent ? BlinkTheme.primaryFill : BlinkTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(prominent ? .clear : BlinkTheme.stroke) }
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
             .opacity(enabled ? configuration.isPressed ? 0.8 : 1 : 0.45)
