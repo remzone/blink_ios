@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Preview is intentionally separate from connectable legacy WireGuard profiles.
+/// Scoped Vokop feed; ordinary VPN imports live in UniversalProfilesView.
 struct SubscriptionView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var xray: XrayVPNController
+    @AppStorage("vokop.turnTransport") private var transport = "tcp"
     @AppStorage("vokop.bootstrapDNS") private var bootstrapDNS = "1.1.1.1"
     @State private var link = ""
     @State private var document: VokopSubscription?
@@ -18,6 +19,7 @@ struct SubscriptionView: View {
     var body: some View {
         List {
             Section("Panel subscription") {
+                Picker("VK TURN", selection: $transport) { Text("TCP").tag("tcp"); Text("UDP").tag("udp") }.disabled(xray.busy)
                 TextField("VK bootstrap DNS IP", text: $bootstrapDNS)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 Text("VK bootstrap DNS queries go outside the VPN through this explicit resolver (default 1.1.1.1). Use an IPv4 or IPv6 address, not a hostname.")
@@ -38,7 +40,7 @@ struct SubscriptionView: View {
                         VStack(alignment: .leading) {
                             Text(profile.name.isEmpty ? profile.id : profile.name)
                             Button("Connect using VK TURN") {
-                                Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, secrets: container.secretStore) }
+                                Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, transport: transport, secrets: container.secretStore) }
                             }.disabled(xray.busy)
                             Text("VLESS / VK TURN · \(profile.turn.peer_host):\(profile.turn.peer_port)")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -47,15 +49,15 @@ struct SubscriptionView: View {
                 }
             }
             Section("Connection support") {
-                NavigationLink("Direct VLESS / XHTTP") { XrayConnectionView() }
+                NavigationLink("Обычные VPN-профили · без VK") { UniversalProfilesView() }
                 Text(xray.status)
                 if let error = xray.errorMessage { Text(error).foregroundStyle(.red) }
                 Button("Check transport status") { Task { await xray.refreshTransportStatus() } }
                 Button("Disconnect Xray", role: .destructive) { xray.disconnect() }
-                Text("Vokop profiles use a dedicated Xray extension, not the legacy WireGuard engine. Native source is implemented but iOS build and device validation remain pending.")
+                Text("Vokop и обычные VPN-профили используют одно расширение BlinkCore. Сборка iOS и проверка на устройстве ещё не выполнялись.")
                 Text("VK compatibility mode does not authenticate the DTLS server certificate; inner VLESS is not TLS-protected. It is not equivalent to authenticated end-to-end TLS. Use application HTTPS and review this limitation before production use.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Direct VLESS/XHTTP uses a separate 3x-ui subscription format; it is not accepted here.")
+                Text("Обычные ссылки и подписки Xray/WireGuard/AmneziaWG импортируются в разделе VPN-профили.")
             }
             Section("Balance") {
                 Text("Check /balance in your administrator’s Telegram bot. The panel does not yet expose a mobile account/balance API. Never enter an administrator password in this app.")

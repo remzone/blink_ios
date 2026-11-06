@@ -1,0 +1,51 @@
+// Adapted from XTLS/libXray 7fe8528063e54343af8ba9a37431afc56000de21; MIT. See LICENSE.
+package share
+
+import (
+	"encoding/json"
+
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/infra/conf"
+)
+
+type XrayRawSettingsHeader struct {
+	Type    string                        `json:"type,omitempty"`
+	Request *XrayRawSettingsHeaderRequest `json:"request,omitempty"`
+}
+
+type XrayRawSettingsHeaderRequest struct {
+	Path    []string                             `json:"path,omitempty"`
+	Headers *XrayRawSettingsHeaderRequestHeaders `json:"headers,omitempty"`
+}
+
+type XrayRawSettingsHeaderRequestHeaders struct {
+	Host []string `json:"Host,omitempty"`
+}
+
+func setOutboundName(outbound *conf.OutboundDetourConfig, name string) {
+	outbound.Tag = name
+}
+
+func getOutboundName(outbound conf.OutboundDetourConfig) string {
+	if len(outbound.Tag) > 0 {
+		return outbound.Tag
+	}
+	if len(outbound.Protocol) > 0 {
+		return outbound.Protocol
+	}
+	return ""
+}
+
+func parseAddress(addr string) *conf.Address {
+	address := &conf.Address{}
+	address.Address = net.ParseAddress(addr)
+	return address
+}
+
+func convertJsonToRawMessage(v any) (json.RawMessage, error) {
+	vBytes, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(vBytes), nil
+}

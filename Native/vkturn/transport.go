@@ -20,7 +20,7 @@ import (
 )
 
 // createSession preserves upstream default VLESS wire framing:
-// TURN over TCP, DTLS datagrams, KCP, then smux multiplexed TCP streams.
+// TURN over the explicitly selected TCP or UDP socket, then unchanged DTLS/KCP/smux.
 // DTLS deliberately has upstream's unauthenticated peer certificate mode. This
 // is NOT authenticated TLS to the VPS; don't advertise certificate verification.
 func (c *Client) createSession(ctx context.Context, peer *net.UDPAddr) (*smux.Session, func(), error) {
@@ -28,13 +28,22 @@ func (c *Client) createSession(ctx context.Context, peer *net.UDPAddr) (*smux.Se
 	if err != nil {
 		return nil, nil, err
 	}
+	return c.createSessionWithCredentials(ctx, peer, user, pass, raw)
+}
+
+// Isolated from VK authentication so both TURN transports can be wire-tested locally.
+func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDPAddr, user, pass, raw string) (*smux.Session, func(), error) {
 	address, err := c.resolveTURN(ctx, raw)
 	if err != nil {
 		return nil, nil, err
 	}
 	dialCtx, dialCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer dialCancel()
-	conn, err := c.dialer.DialContext(dialCtx, "tcp", address)
+	network := c.config.TURNTransport
+	if network == "" {
+		network = "tcp"
+	}
+	conn, err := c.dialer.DialContext(dialCtx, network, address)
 	if err != nil {
 		return nil, nil, errors.New("TURN connection failed")
 	}
@@ -58,8 +67,14 @@ func (c *Client) createSession(ctx context.Context, peer *net.UDPAddr) (*smux.Se
 		family = turn.RequestedAddressFamilyIPv4
 	}
 	logger := &logging.DefaultLoggerFactory{Writer: io.Discard, DefaultLogLevel: logging.LogLevelDisabled, ScopeLevels: map[string]logging.LogLevel{}}
+	var controlConn net.PacketConn
+	if network == "udp" {
+		controlConn = &connectedPacketConn{Conn: conn, peer: conn.RemoteAddr()}
+	} else {
+		controlConn = turn.NewSTUNConn(conn)
+	}
 	client, err := turn.NewClient(&turn.ClientConfig{
-		STUNServerAddr: address, TURNServerAddr: address, Conn: turn.NewSTUNConn(conn),
+		STUNServerAddr: address, TURNServerAddr: address, Conn: controlConn,
 		Net: relayOnlyNet{}, Username: user, Password: pass, RequestedAddressFamily: family, LoggerFactory: logger,
 	})
 	if err != nil {

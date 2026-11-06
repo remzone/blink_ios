@@ -107,7 +107,9 @@ func (c *Client) tokenChain(ctx context.Context, link string, creds VKCredential
 		return parseVKResponse(body)
 	}
 
-	return tokenChainRequests(ctx, link, creds, doRequest)
+	return tokenChainRequests(ctx, link, creds, func(data, endpoint string) (map[string]interface{}, error) {
+		return c.captchaRequest(ctx, data, endpoint, doRequest)
+	})
 }
 
 // Isolated request sequence permits deterministic protocol fixtures without VK.
@@ -279,10 +281,10 @@ func parseVKResponse(body []byte) (map[string]interface{}, error) {
 	}
 	if obj, ok := response["error"].(map[string]interface{}); ok {
 		if code, _ := obj["error_code"].(float64); code == 14 {
-			return nil, ErrCaptchaRequired
+			return nil, &captchaError{fields: obj}
 		}
 		if _, ok := obj["captcha_sid"]; ok {
-			return nil, ErrCaptchaRequired
+			return nil, &captchaError{fields: obj}
 		}
 	}
 	return response, nil

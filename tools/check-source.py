@@ -12,6 +12,11 @@ project = yaml.safe_load((root / 'project.yml').read_text())
 assert {'path': 'fixtures', 'buildPhase': 'resources'} in project['targets']['BlinkTests']['sources']
 new = project['targets']['BlinkXrayTunnel']
 assert new['dependencies'] == [{'framework': 'Native/dist/BlinkCore.xcframework', 'embed': False}]
+app = project['targets']['Blink']
+assert {'framework': 'Native/dist/BlinkCore.xcframework', 'embed': False} in app['dependencies']
+assert 'BlinkPacketTunnel' not in project['targets'], 'legacy multiple Go runtime target must stay retired'
+assert project['settings']['base']['TARGETED_DEVICE_FAMILY'] == '1,2'
+assert len([d for d in app['dependencies'] if 'framework' in d]) == 1
 assert 'XrayExtension' in project['targets']['Blink']['sources'][0]['excludes']
 for workflow in (root / '.github/workflows').glob('*.yml'):
     # BaseLoader avoids YAML 1.1 treating the Actions key "on" as boolean True.

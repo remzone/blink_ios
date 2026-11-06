@@ -1,156 +1,119 @@
-# Vokop / Xray mobile implementation
+# Unified mobile VPN: source design and validation limits
 
-## Status and boundaries
+## Scope
 
-This is source implementation, **not an iOS release or device compatibility claim**.
-No macOS/iOS build, signing, TestFlight upload or live VK/VPN test was run for this
-change. Both Actions workflows are manual-only; publishing a branch must not
-start an Apple build. Swift syntax parsing is not Swift type checking.
+The active project is the SwiftUI app plus `BlinkXrayTunnel`, each linking one
+`BlinkCore` Go framework. The extension contains Xray, official AmneziaWG (also
+serving ordinary WireGuard), and VK TURN. Legacy `Blink/NetworkExtension` sources
+remain excluded; WireGuardKit and the independent FreeTurn Go runtime are no
+longer project dependencies. Old Swift models/editors remain historical code,
+not the main navigation or an automatic configuration migration.
 
-Implemented source paths:
+No iOS build, Swift type checking, XCTest, signing, archive, simulator/device run
+or TestFlight upload was performed. Syntax parsing and Android/Linux results do
+not establish iOS runtime compatibility. The user requested source-only iOS work.
 
-1. Direct: public `NEPacketTunnelFlow.readPackets` → Go `tun.Stack.Input` → Xray
-   registered TUN connection handler → VLESS TCP or basic XHTTP → server.
-2. Vokop feed: same packet bridge → VLESS TCP to loopback → bundled mobile
-   `vkturn` library → TURN TCP / DTLS / KCP / smux → pinned VK TURN server → Xray.
-3. Existing WireGuardKit / FreeTurn flow remains a **separate extension target**.
+## Packet and configuration paths
 
-The new `BlinkXrayTunnel` links only `BlinkCore.xcframework`. It must never link
-legacy `Mobile.xcframework` or WireGuardKit: multiple independently built Go
-runtimes in one process are unsupported. The legacy target's pre-existing Go
-linkage was not redesigned or revalidated by this change.
+- `UniversalProfilesView` → bounded native URI/INI validator → shared Keychain.
+  HTTPS feed refresh replaces only nodes belonging to that feed. Imports cannot
+  inject arbitrary Xray JSON or scripts. Unknown parameters are rejected.
+- `XrayVPNController` revalidates the source and refuses to replace a running
+  extension's credentials. Provider preferences contain only UUID and mode.
+- `XrayPacketTunnelProvider` uses public `packetFlow.readPackets/writePackets`.
+  Xray uses the exported packet stack; WG/AWG uses a bounded packet `tun.Device`
+  adapter and protected UDP bind. No private utun fd lookup or KVC is used.
+- Core endpoint names resolve before installing NE routes. Socket protection
+  waits up to two seconds for a satisfied physical NWPath, binds each socket to
+  that interface and fails closed if binding fails. An existing but inactive
+  `en0` is not used as a fallback. Automatic migration of existing connections
+  between physical interfaces is not implemented; reconnect manually.
+- Transport readiness is distinct from remote handshake or actual internet.
+  Generic core `running` means initialized. The source UI says connectivity is
+  unverified. Android has a real HTTPS probe; iOS transport status is not one.
 
-There is no private utun fd lookup, KVC or unsupported NetworkExtension accessor.
-Xray's exported `Tun`, `NewStack`, `Stack.Input` and registered `ConnectionHandler`
-are used directly. We intentionally do **not** call `Handler.Start` (OS TUN) or
-`Stack.Start` (fd read loop). Swift supplies IP packets and receives IP packet
-callbacks; network settings remain entirely with NetworkExtension.
+## Routing and DNS
 
-## Exact dependency baseline
+Xray/VK install IPv4 only, MTU1280 and DNS 1.1.1.1. Native routing intercepts
+port53 UDP/TCP, forwards DNS using TCP through the selected proxy and returns
+empty AAAA. No direct/freedom DNS fallback is added. DoH/DoT application traffic
+is not rewritten. Endpoint/bootstrap resolution happens in the physical network.
 
-- Xray-core `0afec66085a85191e9dd2a4a6646c7c9a94688d1`, pinned Go module version
-  `v1.260327.1-0.20261029083850-0afec66085a8`; upstream MPL-2.0.
-- VK TURN source `cacggghp/vk-turn-proxy`
-  `e8a96967dc66f3dbd631596ea6a8b9fe03f9be69`; see
-  `Native/vkturn/UPSTREAM.md`, preserved notices and license.
-- Native bridge/library source is GPL-3.0-only; `Native/LICENSE`.
-- Legacy FreeTurn mirror `cacggghp/free-turn-proxy` at the original identical
-  commit `aed2839c7dea18d8ade99299fe77973d0730b00b`; Happy Bunny License, **not MIT**.
-- Legacy gomobile revision follows that FreeTurn go.mod; new native gomobile is
-  separately pinned to `v0.0.0-20261011034528-197770444867`.
+WG/AWG take Address, AllowedIPs, DNS IP and MTU from `.conf`; explicit IPv6 is
+supported by the source model. The parser requires an interface family for each
+route and a route/family covering each DNS server. If DNS is omitted, the default
+1.1.1.1 must be routable. At most16 peers, MTU1280–9000, Jc≤128 and
+Jmin/Jmax/S1–S4≤1280. Desktop configs outside these bounds are rejected.
 
-Review all dependency/legacy licenses and distribution obligations before any
-App Store/TestFlight release. Adding the native license does not relicense
-inherited Swift or other upstream files; GPL + store-distribution conditions
-require a deliberate distribution decision, not an assumption of compatibility.
+The manager sets includeAllNetworks/excludeLocalNetworks for Xray/VK and WG full
+tunnels; WG split tunnels retain explicit AllowedIPs instead. There are no server
+IP exclusions; core sockets alone bind to physical interfaces. Actual Apple
+IPv6 no-leak/fast-fail behaviour, LAN access, split-DNS semantics and routing of
+remote private subnets require physical-device tests. They are **not verified**.
 
-## App / panel contract
+## VK CAPTCHA before VPN
 
-`GET https://<panel>/<base>/api/vokop/v1/subscriptions/<feedToken>` returns
-`vokop.subscription.v1`. Import a dedicated **scoped feed URL**, never an admin
-session/password. HTTPS is required, redirects are rejected, response size is
-bounded at 128 KiB, and cookies/disk cache are disabled. The URL is stored only in
-Keychain. Responses and VLESS IDs are not written to public profile exports.
+`VKPreflightAuthorizer` starts VK authorization in the foreground app, before NE
+routes. Modern challenges use official VKCaptchaSDK; the legacy image form uses
+bounded ephemeral HTTPS and manual input. URLs are restricted to HTTPS VK hosts.
+There is no automatic CAPTCHA solver, private VK application cookie access or
+SSO integration. Closing/backgrounding the app cancels preflight; timeout5min.
 
-`fixtures/vokop.subscription.v1.json` is byte-for-byte copied from the panel
-contract fixture. Static guards compare it with XCTest input, and a native test
-checks the feed-to-mobile field mapping.
+Once TURN is ready, `ExportVKBootstrap` creates a private, profile-bound credential
+handoff valid at most90 seconds. It includes TURN secrets and lives only in the
+shared Keychain. The extension consumes it before connecting and never exposes it
+through provider preferences or logs. It is not a reusable long-term VK login:
+a restart or a reconnect after cached authorization expires requires the app.
+Stopped/expired sessions or a new challenge stop the extension; unready transport
+is bounded to45 seconds after connection, initial extension readiness to40sec.
 
-The parser validates schema, revision, <=31-day lifetime, expiration, profile
-count/IDs, UUIDs, ports and VK call URL. The high-water revision for the saved URL is stored in Keychain independently
-of the preview, so failed refreshes, navigation and restarts do not reset it.
-Forgetting/replacing the saved subscription explicitly resets that identity. Unknown document keys
-are ignored by Swift's decoder; this is not a claim of strict duplicate-key JSON
-validation. The server remains responsible for authoritative entitlement checks.
+Compatibility with the pinned experimental VK server preserves DTLS without
+server-certificate authentication and inner VLESS without TLS. Application HTTPS
+still verifies its own certificates. This mode is not authenticated end-to-end
+TLS. Ordinary profiles use their own configured protocol/TLS instead.
 
-A selected VK profile is copied to Keychain with its expiration. The native
-engine stops at that expiration; refresh the feed to renew. The old WireGuard
-editor is not used to reinterpret VLESS profiles.
+## UI audit
 
-**Balance:** no mobile self-account API exists in the current panel. The UI directs
-users to `/balance` in the administrator's Telegram bot. No admin API calls or
-invented balance numbers are present. A future endpoint needs its own scoped
-self-account token and cannot reuse administrator authentication.
+Compact width uses phone tabs; regular width uses iPad split navigation. Home is
+scrollable with maximum content width, system theme, Dynamic Type and scalable
+icon. Forms allow portrait/landscape adaptation. No screenshots/device claims
+are made: keyboard, long names, large text, VoiceOver, rotation, iPad multitasking
+and dark/light appearances still require a Mac/device review.
 
-Direct mode accepts an individual `vless://` link or a standard 3x-ui HTTPS
-subscription returning a plain URI list or base64/base64url URI list. The
-subscription screen displays every node with either a Connect action or an
-explicit rejection reason; it reuses the individual VLESS parser. Raw and decoded
-data are bounded at 128 KiB, at most 256 nodes and 16 KiB per node. The source URL
-is stored only in Keychain; fetched node credentials remain in memory until a
-selected profile is stored in Keychain. Requests use the same no-redirect,
-no-cookie, no-cache HTTPS transport as the Vokop feed; query-scoped tokens are
-allowed for standard subscription URLs, but userinfo credentials/fragments are
-rejected. Supported parameters: `type=tcp|xhttp`, `security=none|tls|reality`,
-`encryption=none`, `sni`, `fp`, `pbk`, `sid`, `flow`, `host`, `path`, `mode`.
-Vision flow is TCP-only and requires TLS/REALITY. The importer validates
-REALITY key/short-ID shape, nonempty server name, XHTTP mode/path, and supported
-preset fingerprints; settings irrelevant to the chosen mode are rejected. TLS verification cannot be disabled. Unsupported and
-duplicate parameters are rejected, including XHTTP `extra`/`downloadSettings`;
-they are not silently lost. Unsupported protocols/options are not silently omitted or converted.
+## Pinned sources and licensing
 
-## VK server-authentication caveat
+- [Xray-core](https://github.com/XTLS/Xray-core), MPL-2.0,
+  `0afec66085a85191e9dd2a4a6646c7c9a94688d1`.
+- [amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go), MIT,
+  v3.1.20260828 / `b5928efb6ca19f0153958460c3d141f04abc5c2e`.
+- Share parser adapted from [XTLS/libXray](https://github.com/XTLS/libXray), MIT,
+  `7fe8528063e54343af8ba9a37431afc56000de21`; `Native/share/LICENSE` preserved.
+- [VK CAPTCHA iOS SDK](https://github.com/VKCOM/vkid-captcha-ios-sdk), package
+  revision `95ba7944a79da5e85b064d47833be4426fb763ee` (binary0.1.6).
+  Public Swift interfaces inspected; not linked or executed on iOS here.
+- VK TURN baseline and GPL notices: `Native/vkturn/UPSTREAM.md`, `Native/LICENSE`.
+- New bridge integration: GPL-3.0-only. This does not relicense inherited Swift
+  or dependencies. Store distribution and GPL/dependency obligations require a
+  deliberate licensing review before publishing.
+- Historical excluded FreeTurn code used Happy Bunny License, not MIT; legacy
+  attribution is not removed by retiring its target.
 
-Compatibility mode preserves the upstream DTLS configuration, which does **not**
-verify a server certificate. Inner VLESS/TCP currently has `security=none` to match
-the deployed server contract. Consequently this is **not authenticated end-to-end
-TLS** and must not be advertised as such. Traffic still needs application-layer
-TLS; production use requires an explicit risk decision. A future coordinated
-server/feed revision could carry an inner VLESS TLS/REALITY configuration and
-verify that identity through the TURN relay. This change does not silently add
-those fields or assume a server supports them.
+`Native/go.mod/go.sum` pin transitive versions; Makefile pins gomobile. A single
+Go runtime avoids the prior independent Go frameworks. `tools/sync-native.py`
+mirrors Android native source with only the module prefix changed; `--check`
+checks byte equality and stale Go files. No Apple compilation occurs in sync.
 
-## Lifecycle and networking
+## Evidence and remaining work
 
-- Dedicated extension handles profiles and routes; app suspension does not own
-  the core lifecycle. All secrets are read from shared Keychain.
-- Direct endpoint DNS resolution occurs before installing VPN routes; TLS SNI
-  and XHTTP Host remain the original configured names. No broad endpoint-IP bypass route is added; only the core socket receives
-  interface protection. Reconnect to re-resolve a changed endpoint.
-- Relay and Xray external sockets require the physical-interface protector;
-  unavailable protection fails closed. VK DNS uses its protected resolver. The Vokop screen explicitly configures a
-  bootstrap DNS IP (default 1.1.1.1); those VK bootstrap DNS queries intentionally
-  bypass the VPN on the protected physical socket. No iOS resolv.conf discovery
-  or silent DNS fallback is required.
-- IPv4 and IPv6 default routes and DNS use the packet stack. The initial MTU is
-  1280. There are no fallback freedom outbounds or inbound proxy listeners.
-- Packet input is ordered; buffers are copied across the boundary. Stop is
-  idempotent. One active native engine is permitted per extension process.
-- VK readiness comes from a constructed smux session, not a listening localhost
-  port. `captcha_required` pauses network work; the app reports it without
-  CAPTCHA bypass or automatic challenge solving.
-- Apple system “connected” means routes/extension are active, **not verified
-  remote internet reachability**. The UI states that distinction.
+Static project/entitlement/fixture guards and a parser for42 Swift files pass.
+They cannot catch Swift types, SDK linkage, actors or provisioning errors.
+Android-side native race tests cover real VLESS packets, ordinary WireGuard
+against independent official wireguard-go peer, AWG encrypted packets, DNS over
+VLESS, protected sockets, manual challenge lifetime and private handoff binding.
+TV HTTPS was tested for VLESS without VK/CAPTCHA. These are not iOS tests and do
+not certify every protocol/transport against public servers.
 
-## Verification and next authorized build
-
-Linux checks (no external proxy/VPN):
-
-```sh
-cd Native
-GOTOOLCHAIN=local go test -race ./...
-go vet ./...
-```
-
-Tests include public packet-callback ICMP echo, virtual TCP → Xray VLESS → local
-mock peer round trip, lifecycle/restart/invalid profiles, and VK mock lifecycle,
-protected socket failure and loopback smux relay tests. Local mocks do not prove
-live VK authentication, TURN availability or iOS routing.
-
-XCTest source covers Vokop fixture/lifetime/URL validation, VLESS parsing,
-standard URI-list/base64 equivalence, per-node rejection and bounds, but
-has not been run. A future explicitly authorized macOS check must use Go 1.27.3+,
-Xcode/SDKs and `make prepare`, then compile both extensions and run XCTest. The
-new Swift-to-gomobile calls must be type checked against generated BlinkCore
-headers; Linux header generation and syntax parsing are weaker checks.
-
-Signing requires three App IDs/provisioning identities: app, legacy tunnel and
-`com.blink.tunnel.XrayTunnel`, with matching App Group, shared Keychain and
-NetworkExtension entitlements. Existing automatic-signing workflow must have
-permission to create/update all profiles. No signing assets belong in Git.
-
-Physical-device acceptance: direct TCP/XHTTP TLS/REALITY; VK transport against the
-same pinned server; DNS/IPv6; endpoint-route protection; Wi-Fi↔cellular transitions;
-sleep/wake; cancellation/reconnect; expiration and revocation; CAPTCHA state;
-packet loss/MTU; memory/battery; no unprotected fallback. iOS builds and these
-tests remain pending user authorization/environment, not marked passed.
+Still pending on iOS: generate/build with Xcode, framework symbols and SDK/Swift
+compatibility, provisioning, actual packet/TLS/DNS paths, IPv4/IPv6 leakage,
+full/split routing, Wi-Fi/cellular transitions, app suspension/extension memory,
+battery and reconnects, CAPTCHA presentation and all visual/accessibility checks.

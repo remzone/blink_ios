@@ -11,7 +11,8 @@ struct BlinkApp: App {
             RootView()
                 .environmentObject(container)
                 .environmentObject(xray)
-                .preferredColorScheme(.dark)
+                .environmentObject(xray.authorization)
+
         }
     }
 }

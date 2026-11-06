@@ -26,11 +26,15 @@ var ErrCaptchaRequired = errors.New("captcha_required")
 type Config struct {
 	// DNSServer is an explicitly selected physical-network bootstrap DNS IP.
 	// It is not a tunnel DNS server; all queries are socket-protected.
-	DNSServer string
-	PeerHost  string
-	PeerPort  int
-	VKCallURL string
-	Streams   int
+	DNSServer     string
+	Bootstrap     string
+	TURNTransport string
+	ManualCaptcha bool
+	Direct        bool
+	PeerHost      string
+	PeerPort      int
+	VKCallURL     string
+	Streams       int
 }
 
 type sessionFactory func(context.Context, *net.UDPAddr) (*smux.Session, func(), error)
@@ -39,6 +43,8 @@ type sessionFactory func(context.Context, *net.UDPAddr) (*smux.Session, func(), 
 // External sockets require a non-nil fail-closed protector. The callback must
 // return promptly and must not retain fd: it is valid only during the callback.
 type Client struct {
+	captchaMu                       sync.Mutex
+	challenge                       *captchaChallenge
 	ctx                             context.Context
 	cancel                          context.CancelFunc
 	networkCtx                      context.Context
@@ -76,16 +82,33 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 		return nil, err
 	}
 	u, err := url.Parse(cfg.VKCallURL)
-	if err != nil || u.Scheme != "https" || (u.Host != "vk.com" && u.Host != "www.vk.com") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !regexp.MustCompile(`^/call/join/[A-Za-z0-9_=-]+$`).MatchString(u.Path) || u.RawPath != "" {
+	if err != nil || u.Scheme != "https" || (u.Host != "vk.com" && u.Host != "www.vk.com" && u.Host != "vk.ru" && u.Host != "www.vk.ru") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !regexp.MustCompile(`^/call/join/[A-Za-z0-9_=-]+$`).MatchString(u.Path) || u.RawPath != "" {
 		return nil, errors.New("invalid VK call URL")
+	}
+	if cfg.TURNTransport != "" && cfg.TURNTransport != "tcp" && cfg.TURNTransport != "udp" {
+		return nil, errors.New("invalid TURN transport")
 	}
 	if net.ParseIP(cfg.DNSServer) == nil || cfg.Streams < 1 || cfg.Streams > 16 || cfg.PeerPort < 1 || cfg.PeerPort > 65535 || !validHost(cfg.PeerHost) {
 		return nil, errors.New("invalid transport configuration")
+	}
+	var bootstrap turnBootstrap
+	if cfg.Bootstrap != "" {
+		var e error
+		bootstrap, e = validateBootstrap(cfg.Bootstrap, cfg)
+		if e != nil {
+			return nil, e
+		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	nctx, ncancel := context.WithCancel(ctx)
 	c := &Client{ctx: ctx, cancel: cancel, networkCtx: nctx, networkCancel: ncancel, config: cfg, link: strings.TrimPrefix(u.Path, "/call/join/"), done: make(chan struct{}), events: make(chan string, 1), authGate: make(chan struct{}, 1), state: "connecting"}
 	c.authGate <- struct{}{}
+	if cfg.Bootstrap != "" {
+		c.username = bootstrap.Username
+		c.password = bootstrap.Password
+		c.turnAddress = bootstrap.Address
+		c.credsUntil = time.Unix(bootstrap.ExpiresAt, 0)
+	}
 	control := func(_, _ string, raw syscall.RawConn) error {
 		allowed := false
 		if err := raw.Control(func(fd uintptr) { allowed = protect(fd) }); err != nil {
@@ -112,6 +135,9 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	c.factory = factory
 	if c.factory == nil {
 		c.factory = c.createSession
+		if cfg.Direct {
+			c.factory = c.createDirectSession
+		}
 	}
 	c.events <- "connecting"
 	go c.run()
@@ -147,6 +173,12 @@ func (c *Client) Close() error          { c.cancel(); <-c.done; return nil }
 func (c *Client) setState(s string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.captchaMu.Lock()
+	waiting := c.challenge != nil && !c.challenge.submitted
+	c.captchaMu.Unlock()
+	if waiting && s != "captcha_required" && s != "stopped" {
+		return
+	}
 	if c.state == s || (c.paused.Load() && s != "captcha_required" && s != "stopped") {
 		return
 	}
@@ -215,7 +247,9 @@ func (c *Client) run() {
 	c.networkCancel()
 	c.wg.Wait()
 	// Clear cached secrets once workers can no longer access them.
+	<-c.authGate
 	c.username, c.password, c.turnAddress = "", "", ""
+	c.authGate <- struct{}{}
 	c.setState("stopped")
 	close(c.events)
 }

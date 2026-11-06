@@ -1,12 +1,15 @@
 import Foundation
 import Combine
 import NetworkExtension
+import BlinkCore
 
 @MainActor
 final class XrayVPNController: ObservableObject {
     @Published private(set) var status = "Disconnected"
     @Published private(set) var busy = false
     @Published private(set) var errorMessage: String?
+    let authorization = VKPreflightAuthorizer()
+    @Published private(set) var profileName = "Выберите VPN-профиль"
     private var operation = UUID()
     private var manager: NETunnelProviderManager?
     private var observer: NSObjectProtocol?
@@ -37,21 +40,49 @@ final class XrayVPNController: ObservableObject {
         catch { errorMessage = "Unable to encode the VLESS profile." }
     }
 
-    func connect(profile: VokopSubscription.Profile, expiresAt: Int64, dnsServer: String, secrets: SecretStore) async {
-        struct VKProfile: Encodable {
-            let uuid: String; let peerHost: String; let peerPort: Int
-            let vkCallURL: String; let streams: Int; let expiresAt: Int64; let dnsServer: String
-        }
-        guard expiresAt > Int64(Date().timeIntervalSince1970) else { errorMessage = "Subscription expired. Refresh it before connecting."; return }
-        let value = VKProfile(uuid: profile.vless.uuid, peerHost: profile.turn.peer_host, peerPort: profile.turn.peer_port,
-            vkCallURL: profile.turn.vk_call_url, streams: profile.turn.streams, expiresAt: expiresAt, dnsServer: dnsServer)
+    func connectUniversal(source: String, name: String, secrets: SecretStore) async {
+        guard !busy else { return }
         do {
+            var nativeError: NSError?
+            let metadata = MobileImportProfile(source, &nativeError)
+            guard nativeError == nil else { throw UniversalProfileError.invalid }
+            let profile = try JSONDecoder().decode(ImportedNetworkProfile.self, from: Data(metadata.utf8))
+            let wg = profile.kind == "wireguard" || profile.kind == "amneziawg"
+            let has4 = profile.addresses.contains { !$0.contains(":") }, has6 = profile.addresses.contains { $0.contains(":") }
+            let full = !wg || ((!has4 || profile.routes.contains("0.0.0.0/0")) && (!has6 || profile.routes.contains("::/0")))
+            let payload: [String: String] = ["schema": "blink.profile.v1", "source": source]
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            profileName = name
+            await connect(json: String(decoding: data, as: UTF8.self), mode: "universal", server: "Blink VPN", captureAll: full, secrets: secrets)
+        } catch { errorMessage = "Не удалось сохранить VPN-профиль." }
+    }
+    func connect(profile: VokopSubscription.Profile, expiresAt: Int64, dnsServer: String, transport: String = "tcp", secrets: SecretStore) async {
+        guard !busy else { return }
+        guard manager == nil || [.invalid, .disconnected].contains(manager!.connection.status) else { errorMessage = "Сначала отключите текущий VPN."; return }
+        struct VKProfile: Encodable {
+            let uuid: String; let peerHost: String; let peerPort: Int; let vkCallURL: String
+            let streams: Int; let expiresAt: Int64; let dnsServer: String
+            let manualCaptcha = true; let turnTransport: String; var bootstrap = ""
+        }
+        guard expiresAt > Int64(Date().timeIntervalSince1970), ["tcp", "udp"].contains(transport) else { errorMessage = "Подписка истекла или неверный транспорт."; return }
+        let id = UUID(); operation = id; busy = true; errorMessage = nil
+        status = "Авторизация VK · используется обычная сеть"
+        do {
+            let existing = try await NETunnelProviderManager.loadAllFromPreferences().first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == SharedConstants.xrayTunnelBundleIdentifier }
+            guard operation == id else { return }
+            guard existing == nil || [.invalid, .disconnected].contains(existing!.connection.status) else { busy = false; errorMessage = "Сначала отключите текущий VPN."; return }
+            manager = existing
+            var value = VKProfile(uuid: profile.vless.uuid, peerHost: profile.turn.peer_host, peerPort: profile.turn.peer_port, vkCallURL: profile.turn.vk_call_url, streams: profile.turn.streams, expiresAt: expiresAt, dnsServer: dnsServer, turnTransport: transport)
             let data = try JSONEncoder().encode(value)
-            await connect(json: String(decoding: data, as: UTF8.self), mode: "vkturn", server: profile.turn.peer_host, secrets: secrets)
-        } catch { errorMessage = "Unable to encode the subscription profile." }
+            value.bootstrap = try await authorization.authorize(String(decoding: data, as: UTF8.self))
+            guard operation == id else { return }; busy = false
+            profileName = profile.name
+            let prepared = try JSONEncoder().encode(value)
+            await connect(json: String(decoding: prepared, as: UTF8.self), mode: "vkturn", server: profile.turn.peer_host, secrets: secrets)
+        } catch { if operation == id { busy = false; status = "Не подключён"; errorMessage = "Авторизация VK отменена, истекла или не завершилась. Повторите подключение." } }
     }
 
-    private func connect(json: String, mode: String, server: String, secrets: SecretStore) async {
+    private func connect(json: String, mode: String, server: String, captureAll: Bool = true, secrets: SecretStore) async {
         guard !busy else { return }
         let attempt = UUID(); operation = attempt
         busy = true; errorMessage = nil
@@ -68,9 +99,11 @@ final class XrayVPNController: ObservableObject {
             let configuration = NETunnelProviderProtocol()
             configuration.providerBundleIdentifier = SharedConstants.xrayTunnelBundleIdentifier
             configuration.serverAddress = server
+            configuration.includeAllNetworks = captureAll
+            configuration.excludeLocalNetworks = captureAll
             configuration.providerConfiguration = [SharedConstants.profileIDKey: credentialID.uuidString, "mode": mode]
             manager.protocolConfiguration = configuration
-            manager.localizedDescription = mode == "vkturn" ? "Blink — VLESS / VK TURN" : "Blink — VLESS / Xray"
+            manager.localizedDescription = mode == "vkturn" ? "Blink — VK TURN" : "Blink — VPN"
             manager.isEnabled = true
             try await manager.saveToPreferences()
             guard operation == attempt else { return }
@@ -84,6 +117,7 @@ final class XrayVPNController: ObservableObject {
 
     func disconnect() {
         operation = UUID()
+        authorization.cancel(); busy = false
         manager?.connection.stopVPNTunnel()
         status = manager == nil ? "Disconnected" : "Disconnecting…"
     }
@@ -106,7 +140,7 @@ final class XrayVPNController: ObservableObject {
                         switch engine {
                         case "ready": self.status = "VPN active · VK transport ready"
                         case "connecting": self.status = "VPN active · VK transport connecting"
-                        case "captcha_required": self.status = "VK requires CAPTCHA. Disconnect and contact the administrator."
+                        case "captcha_required": self.status = "VK требует новую проверку. Отключите VPN и подключитесь из приложения."
                         case "stopped": self.status = "Engine stopped — disconnect and refresh subscription"
                         default: self.status = "VPN active · Xray running (connectivity not verified)"
                         }

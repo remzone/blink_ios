@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Package mobile binds one Go runtime for Xray and packet-oriented iOS I/O.
-// It does not access utun file descriptors or any private Apple API.
+// Package mobile binds one Go runtime for Xray and packet-oriented platform I/O.
+// Android owns the TUN descriptor and supplies packets through the public bridge.
 package mobile
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/remzone/blink_ios/native/vkturn"
 	"io"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -42,22 +44,26 @@ var protection struct {
 	protector Protector
 }
 
-// Engine must live only in the dedicated BlinkXrayTunnel extension, never the
-// legacy WireGuardKit+Mobile process. Its input must be fed in packet order.
+// Engine runs in the VPN service process. Its input must be fed in packet order.
 type Engine struct {
+	txBytes     atomic.Uint64
 	vkTransport *vkturn.Client
 	expiry      *time.Timer
 	mu          sync.Mutex
-	stack       tun.Stack
-	adapter     *packetAdapter
-	instance    *core.Instance
-	cancel      context.CancelFunc
+	stack       interface {
+		Input([]byte)
+		Close() error
+	}
+	adapter  *packetAdapter
+	instance *core.Instance
+	cancel   context.CancelFunc
 }
 
 type packetAdapter struct {
-	mu     sync.RWMutex
-	sink   PacketWriter
-	closed bool
+	rxBytes atomic.Uint64
+	mu      sync.RWMutex
+	sink    PacketWriter
+	closed  bool
 }
 
 func (p *packetAdapter) Start() error          { return nil }
@@ -85,6 +91,7 @@ func (p *packetAdapter) WritePacket(header, payload []byte) error {
 	if p.sink == nil || !p.sink.WritePacket(packet) {
 		return io.ErrClosedPipe
 	}
+	p.rxBytes.Add(uint64(len(packet)))
 	return nil
 }
 
@@ -118,6 +125,13 @@ func registerController() error {
 }
 
 func Start(profileJSON string, sink PacketWriter, protector Protector) (*Engine, error) {
+	raw, err := buildConfig(profileJSON)
+	if err != nil {
+		return nil, err
+	}
+	return startConfig(raw, sink, protector)
+}
+func startConfig(raw []byte, sink PacketWriter, protector Protector) (*Engine, error) {
 	lifecycle.Lock()
 	defer lifecycle.Unlock()
 	if active != nil {
@@ -126,7 +140,7 @@ func Start(profileJSON string, sink PacketWriter, protector Protector) (*Engine,
 	if sink == nil || protector == nil {
 		return nil, errors.New("packet writer and protector required")
 	}
-	raw, err := buildConfig(profileJSON)
+	raw, err := withProxyDNS(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +193,7 @@ func Start(profileJSON string, sink PacketWriter, protector Protector) (*Engine,
 		fail()
 		return nil, errors.New("Xray start failed")
 	}
-	// Do not call stack.Start(): Input receives public NEPacketTunnelFlow packets.
+	// Do not call stack.Start(): Android supplies packets through Input.
 	e := &Engine{stack: stack, adapter: adapter, instance: instance, cancel: cancel}
 	active = e
 	success = true
@@ -201,6 +215,7 @@ func (e *Engine) Input(packet []byte) error {
 	}
 	// Stack.Input may modify bytes; gomobile caller memory must not be retained.
 	e.stack.Input(append([]byte(nil), packet...))
+	e.txBytes.Add(uint64(len(packet)))
 	return nil
 }
 func (e *Engine) Stop() {
@@ -222,7 +237,9 @@ func (e *Engine) Stop() {
 	e.cancel()
 	_ = stack.Close()
 	_ = e.adapter.Close()
-	_ = e.instance.Close()
+	if e.instance != nil {
+		_ = e.instance.Close()
+	}
 	if transport != nil {
 		_ = transport.Close()
 	}
@@ -232,4 +249,16 @@ func (e *Engine) Stop() {
 		protection.protector = nil
 		protection.Unlock()
 	}
+}
+
+// StatsJSON contains counters only; profiles and credentials never cross this API.
+func (e *Engine) StatsJSON() string {
+	e.mu.Lock()
+	rx := uint64(0)
+	if e.adapter != nil {
+		rx = e.adapter.rxBytes.Load()
+	}
+	e.mu.Unlock()
+	raw, _ := json.Marshal(map[string]uint64{"tx": e.txBytes.Load(), "rx": rx})
+	return string(raw)
 }

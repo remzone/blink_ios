@@ -31,7 +31,9 @@ func (w *channelWriter) WritePacket(p []byte) bool {
 
 // A loopback mock speaks only the minimal VLESS response and echoes bytes. This
 // tests packetFlow->TCP stack->Xray VLESS->mock->packetFlow without a VPN/server.
-func TestTCPVLESSLoopbackMock(t *testing.T) {
+func TestTCPVLESSLoopbackMock(t *testing.T)         { testTCPVLESSLoopback(t, false) }
+func TestStandardVLESSPacketRoundTrip(t *testing.T) { testTCPVLESSLoopback(t, true) }
+func testTCPVLESSLoopback(t *testing.T, standard bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -99,7 +101,16 @@ func TestTCPVLESSLoopbackMock(t *testing.T) {
 	profile := strings.Replace(testProfile, `"address":"203.0.113.10","port":443`, `"address":"127.0.0.1","port":`+port, 1)
 	profile = strings.Replace(profile, `"security":"tls"`, `"security":"none"`, 1)
 	toPeer := &channelWriter{ctx: ctx, packets: make(chan []byte, 128)}
-	e, err := Start(profile, toPeer, noNetwork{t})
+	var e *Engine
+	if standard {
+		raw, importErr := ImportProfile("vless://00000000-0000-4000-8000-000000000001@127.0.0.1:" + port + "?security=none&type=tcp")
+		if importErr != nil {
+			t.Fatal(importErr)
+		}
+		e, err = StartProfile(raw, toPeer, noNetwork{t})
+	} else {
+		e, err = Start(profile, toPeer, noNetwork{t})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

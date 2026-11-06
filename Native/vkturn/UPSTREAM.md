@@ -41,9 +41,12 @@ Pion socket creation, OS DNS and interface discovery. Pion logs are discarded
 even if environment variables request debug output. DTLS/KCP/smux create no additional OS sockets.
 
 CAPTCHA is never solved automatically, nor is a local browser/proxy opened.
-A detected challenge publishes `captcha_required`, cancels all transport
-workers and stays paused until the owner recreates the client after resolving
-access outside this component. No challenge URL/token is disclosed to logs.
+By default a detected challenge publishes `captcha_required` and pauses the transport.
+Android opts into Config.ManualCaptcha: the same request/client/cookie jar waits up
+to five minutes for a single answer bound to a random challenge ID. CaptchaJSON
+and SubmitCaptcha are private owner/UI APIs. Successful manual verification
+retries that request; cancellation and expiry clear the challenge. Status/Events
+and logs never contain challenge URLs or tokens. No automatic solver is used.
 
 ## Wire and security limits
 

@@ -9,7 +9,7 @@ Vendor/
 artifacts/
 Config/Developer.xcconfig
 
-# Signing material must only be stored in GitHub Actions secrets
+# Signing material stays outside Git
 *.p8
 *.p12
 *.cer
@@ -26,3 +26,7 @@ AuthKey_*.p8
 *.dSYM
 
 Native/dist/
+
+# Local source checks, logs, wheels and temporary private fixtures
+work/
+__pycache__/

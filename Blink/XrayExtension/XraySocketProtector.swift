@@ -8,53 +8,56 @@ final class XraySocketProtector: NSObject, MobileProtectorProtocol {
     private static let ipv6BoundIf: Int32 = 125
     private var monitor: NWPathMonitor?
     private let queue = DispatchQueue(label: "com.blink.tunnel.physical-path")
-    private let lock = NSLock()
+    private let condition = NSCondition()
     private var interfaceIndex: UInt32 = 0
+    private var generation = UUID()
 
     func start() {
+        stop()
         let monitor = NWPathMonitor()
-        self.monitor = monitor
+        condition.lock()
+        let id = UUID(); generation = id; self.monitor = monitor
+        condition.unlock()
         monitor.pathUpdateHandler = { [weak self] path in
-            let index = Self.physicalInterfaceIndex(path)
-            self?.lock.lock(); self?.interfaceIndex = index; self?.lock.unlock()
+            guard let self else { return }
+            let index = path.status == .satisfied ? Self.physicalInterfaceIndex(path) : 0
+            self.condition.lock()
+            if self.generation == id { self.interfaceIndex = index; self.condition.broadcast() }
+            self.condition.unlock()
         }
         monitor.start(queue: queue)
     }
 
     func stop() {
-        monitor?.cancel()
-        monitor = nil
-        lock.lock(); interfaceIndex = 0; lock.unlock()
+        condition.lock()
+        let previous = monitor; monitor = nil; generation = UUID(); interfaceIndex = 0
+        condition.broadcast(); condition.unlock()
+        previous?.cancel()
     }
 
     func protect(_ fd: Int64) -> Bool {
-        lock.lock(); var index = interfaceIndex; lock.unlock()
-        if index == 0 { index = Self.fallbackInterfaceIndex() }
-        // Never allow an unprotected relay socket into the VPN route.
-        guard index != 0 else { return false }
         guard fd >= 0, fd <= Int64(Int32.max) else { return false }
-        let socket = Int32(fd)
-        let length = socklen_t(MemoryLayout<UInt32>.size)
+        // Wait for an actual active physical path; interface existence alone is insufficient.
+        condition.lock()
+        let id = generation, deadline = Date().addingTimeInterval(2)
+        while interfaceIndex == 0 && monitor != nil && generation == id && Date() < deadline {
+            _ = condition.wait(until: deadline)
+        }
+        var index = generation == id ? interfaceIndex : 0
+        condition.unlock()
+        guard index != 0 else { return false }
+        let socket = Int32(fd), length = socklen_t(MemoryLayout<UInt32>.size)
         let ipv4 = setsockopt(socket, IPPROTO_IP, Self.ipBoundIf, &index, length)
         let ipv6 = setsockopt(socket, IPPROTO_IPV6, Self.ipv6BoundIf, &index, length)
         return ipv4 == 0 || ipv6 == 0
     }
 
     private static func physicalInterfaceIndex(_ path: NWPath) -> UInt32 {
-        for interface in path.availableInterfaces {
-            guard path.usesInterfaceType(interface.type) else { continue }
+        for interface in path.availableInterfaces where path.usesInterfaceType(interface.type) {
             switch interface.type {
             case .wifi, .cellular, .wiredEthernet: return if_nametoindex(interface.name)
             default: continue
             }
-        }
-        return 0
-    }
-
-    private static func fallbackInterfaceIndex() -> UInt32 {
-        for name in ["en0", "pdp_ip0", "pdp_ip1"] {
-            let index = if_nametoindex(name)
-            if index != 0 { return index }
         }
         return 0
     }
