@@ -169,7 +169,7 @@ struct UniversalProfilesView: View {
             Button { details = profile } label: {
                 Label("Что это за конфигурация?", systemImage: "info.circle").font(.caption).foregroundStyle(.secondary).frame(minHeight: 44)
             }.buttonStyle(.plain)
-            Button { Task { await xray.connectUniversal(source: profile.source, name: profile.name, secrets: container.secretStore) } } label: { Label("Подключить", systemImage: "power") }
+            Button { Task { await xray.connectUniversal(source: profile.source, name: profile.name, secrets: container.secretStore, diagnosticURL: profile.subscriptionURL) } } label: { Label("Подключить", systemImage: "power") }
                 .buttonStyle(BlinkActionStyle(prominent: true)).disabled(xray.hasActiveConnection)
         }.frame(maxWidth: .infinity, alignment: .leading).blinkCard()
     }

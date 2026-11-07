@@ -13,19 +13,50 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
     private var running = false
     private var networkProfile: ImportedNetworkProfile?
     private var unreadySince: Date?
+    private var diagnostics: DiagnosticRecorder?
+    private var startedAt = Date()
+    private var heartbeat = 0
+    private var startupTicks = 0
+    private var lastState = ""
+    private var inputPackets: Int64 = 0
+    private var outputPackets: Int64 = 0
+    private var inputErrors: Int64 = 0
+    private var outputErrors: Int64 = 0
+    private var queueDelayMs: Int64 = 0
+    private var memoryPressure: DispatchSourceMemoryPressure?
     private var pendingStart: ((Error?) -> Void)?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         ioQueue.async { [weak self] in
             guard let self else { return }
             let attempt = UUID(); self.generation = attempt; self.unreadySince = nil; self.pendingStart = completionHandler
+            let publicConfig = self.protocolConfiguration as? NETunnelProviderProtocol
+            let suppliedID = publicConfig?.providerConfiguration?["diagnosticsSessionID"] as? String
+            self.diagnostics = DiagnosticRecorder(sessionID: suppliedID.flatMap { UUID(uuidString: $0)?.uuidString } ?? UUID().uuidString, source: "extension")
+            _ = MobileSetDiagnosticSession(self.diagnostics!.session.id)
+            self.startedAt = Date(); self.heartbeat = 0; self.startupTicks = 0
+            self.diagnostics?.record("extension.start", fields: DiagnosticStore.memory().merging(["sharedStorage": DiagnosticStore.sharedContainerAvailable ? 1 : 0]) { _, new in new }, critical: true)
+            self.diagnostics?.marker(true)
+            self.protector.diagnostics = self.diagnostics
+            _ = MobileConfigureRuntime(32 * 1024 * 1024, 75)
+            self.diagnostics?.record("extension.profile", fields: ["memoryLimitBytes": 32 * 1024 * 1024, "gcPercent": 75])
+            let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: self.ioQueue)
+            pressure.setEventHandler { [weak self] in
+                self?.diagnostics?.record("extension.memory_warning", fields: DiagnosticStore.memory().merging(["reason": Int64(self?.memoryPressure?.data.rawValue ?? 0)]) { _, new in new }, critical: true)
+            }
+            self.memoryPressure = pressure; pressure.resume()
+            Task { _ = await DiagnosticUploader.shared.flush() }
+            var startupStage: Int64 = 1
             do {
                 try NativeResources.prepare()
+                startupStage = 2
                 guard let config = self.protocolConfiguration as? NETunnelProviderProtocol,
                       let idString = config.providerConfiguration?[SharedConstants.profileIDKey] as? String,
                       let id = UUID(uuidString: idString),
                       let raw = try KeychainSecretStore().read(profileID: id, kind: .xrayProfile) else { throw self.safeError("Нет профиля в Keychain.") }
                 let mode = config.providerConfiguration?["mode"] as? String ?? "direct"
+                self.diagnostics?.record("extension.profile", fields: ["mode": mode == "vkturn" ? 1 : 0])
+                startupStage = 3
                 self.protector.start(); var error: NSError?
                 if mode == "universal" {
                     struct Source: Decodable { let schema: String; let source: String }
@@ -48,25 +79,39 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
                     document["bootstrap"] = ""
                     let consumed = try JSONSerialization.data(withJSONObject: document)
                     try KeychainSecretStore().save(String(decoding: consumed, as: UTF8.self), profileID: id, kind: .xrayProfile)
+                    self.diagnostics?.record("extension.profile", fields: ["streams": Int64(document["streams"] as? Int ?? 0)])
                     self.engine = MobileStartVK(raw, self, self.protector, &error)
                 } else { throw self.safeError("Неизвестный режим VPN.") }
                 guard error == nil, self.engine != nil else { throw self.safeError("Не удалось запустить VPN. Проверьте профиль; для VK повторите авторизацию в приложении.") }
+                self.diagnostics?.record("extension.core_started", fields: DiagnosticStore.memory(), critical: true)
                 self.waitForReady(attempt: attempt, deadline: Date().addingTimeInterval(40))
-            } catch { self.failStart(self.safeError("VPN не запущен. Проверьте профиль, сеть и авторизацию VK.")) }
+            } catch { self.diagnostics?.record("extension.failure", fields: DiagnosticStore.errorFields(error).merging(["stage": startupStage]) { _, new in new }, critical: true); self.failStart(self.safeError("VPN не запущен. Проверьте профиль, сеть и авторизацию VK.")) }
         }
     }
     private func waitForReady(attempt: UUID, deadline: Date) {
         guard generation == attempt, let engine else { finishStart(safeError("Запуск отменён.")); return }
+        drainNativeEvents()
+        startupTicks += 1
+        if startupTicks % 5 == 1 {
+            var fields = DiagnosticStore.memory()
+            if let runtime = try? JSONDecoder().decode([String: Int64].self, from: Data(MobileRuntimeStatsJSON().utf8)) { fields.merge(runtime) { _, new in new } }
+            fields["uptimeMs"] = Int64(Date().timeIntervalSince(startedAt) * 1000)
+            fields["stage"] = 0
+            diagnostics?.record("extension.heartbeat", fields: fields)
+            Task { _ = await DiagnosticUploader.shared.flush() }
+        }
         let state = engine.status()
         if state == "ready" || state == "running" {
             do {
                 let settings = try settings()
+                diagnostics?.record("extension.routes_begin", fields: DiagnosticStore.memory(), critical: true)
                 setTunnelNetworkSettings(settings) { [weak self] error in
                     guard let self else { return }
                     self.ioQueue.async {
                         guard self.generation == attempt else { self.finishStart(self.safeError("Запуск отменён.")); return }
                         guard error == nil else { self.failStart(self.safeError("Не удалось применить маршруты VPN.")); return }
                         self.stateLock.lock(); self.running = true; self.stateLock.unlock()
+                        self.diagnostics?.record("extension.routes_ready", fields: DiagnosticStore.memory(), critical: true)
                         self.readPackets(attempt: attempt); self.finishStart(nil); self.monitor(attempt: attempt)
                     }
                 }
@@ -77,10 +122,13 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
         ioQueue.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.waitForReady(attempt: attempt, deadline: deadline) }
     }
     private func finishStart(_ error: Error?) { let callback = pendingStart; pendingStart = nil; callback?(error) }
-    private func failStart(_ error: Error) { engine?.stop(); engine = nil; protector.stop(); finishStart(error) }
+    private func failStart(_ error: Error) { drainNativeEvents(); diagnostics?.record("extension.failure", fields: DiagnosticStore.errorFields(error), critical: true); diagnostics?.marker(false); memoryPressure?.cancel(); memoryPressure = nil; engine?.stop(); engine = nil; protector.stop(); finishStart(error) }
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         ioQueue.async { [weak self] in
             guard let self else { completionHandler(); return }
+            self.diagnostics?.record("extension.stop", fields: ["reason": Int64(reason.rawValue), "uptimeMs": Int64(Date().timeIntervalSince(self.startedAt) * 1000)], critical: true)
+            self.diagnostics?.marker(false); self.memoryPressure?.cancel(); self.memoryPressure = nil
+            Task { _ = await DiagnosticUploader.shared.flush() }
             self.generation = UUID(); self.stateLock.lock(); self.running = false; self.stateLock.unlock()
             self.engine?.stop(); self.engine = nil; self.protector.stop(); self.networkProfile = nil
             self.finishStart(self.safeError("Запуск отменён.")); completionHandler()
@@ -89,7 +137,26 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
     private func monitor(attempt: UUID) {
         guard generation == attempt, let engine else { return }
         let state = engine.status()
+        heartbeat += 1
+        if state != lastState {
+            lastState = state
+            let states = ["stopped", "connecting", "captcha_required", "ready", "running"]
+            diagnostics?.record("extension.state", fields: ["state": Int64(states.firstIndex(of: state) ?? -1)], critical: true)
+        }
+        if heartbeat <= 20 || heartbeat % 10 == 0 {
+            var fields = DiagnosticStore.memory()
+            if let runtime = try? JSONDecoder().decode([String: Int64].self, from: Data(MobileRuntimeStatsJSON().utf8)) { fields.merge(runtime) { _, new in new } }
+            if let traffic = try? JSONDecoder().decode([String: Int64].self, from: Data(engine.statsJSON().utf8)) { fields["txBytes"] = traffic["tx"] ?? 0; fields["rxBytes"] = traffic["rx"] ?? 0 }
+            stateLock.lock(); fields["outputPackets"] = outputPackets; fields["outputErrors"] = outputErrors; stateLock.unlock()
+            fields["inputPackets"] = inputPackets; fields["inputErrors"] = inputErrors
+            fields["uptimeMs"] = Int64(Date().timeIntervalSince(startedAt) * 1000); fields["queueDelayMs"] = queueDelayMs
+            diagnostics?.record("extension.heartbeat", fields: fields)
+        }
+        drainNativeEvents()
+        if heartbeat % 5 == 0 { Task { _ = await DiagnosticUploader.shared.flush() } }
         if state == "stopped" || state == "captcha_required" {
+            diagnostics?.record("extension.failure", fields: ["stage": 6], critical: true)
+            diagnostics?.marker(false); memoryPressure?.cancel(); memoryPressure = nil
             generation = UUID(); engine.stop(); self.engine = nil
             stateLock.lock(); running = false; stateLock.unlock()
             protector.stop()
@@ -98,28 +165,44 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
         if state == "connecting" {
             if unreadySince == nil { unreadySince = Date() }
             if let since = unreadySince, Date().timeIntervalSince(since) > 45 {
+                diagnostics?.record("extension.failure", fields: ["stage": 5], critical: true)
+                diagnostics?.marker(false); memoryPressure?.cancel(); memoryPressure = nil
                 generation = UUID(); engine.stop(); self.engine = nil
                 stateLock.lock(); running = false; stateLock.unlock(); protector.stop()
                 cancelTunnelWithError(safeError("Транспорт не восстановился за 45 секунд.")); return
             }
         } else { unreadySince = nil }
-        ioQueue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.monitor(attempt: attempt) }
+        let scheduled = Date()
+        ioQueue.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.queueDelayMs = max(0, Int64((Date().timeIntervalSince(scheduled) - 1) * 1000))
+            self?.monitor(attempt: attempt)
+        }
+    }
+    private func drainNativeEvents() {
+        struct NativeEvent: Decodable { let event: String; let fields: [String: Int64]?; let sessionId: String?; let occurredAt: Int64? }
+        if let rows = try? JSONDecoder().decode([NativeEvent].self, from: Data(MobileDrainDiagnosticEventsJSON().utf8)) {
+            for row in rows where row.sessionId == nil || row.sessionId == diagnostics?.session.id {
+                diagnostics?.record(row.event, fields: row.fields ?? [:], source: "native", occurredAt: row.occurredAt)
+            }
+        }
     }
     private func readPackets(attempt: UUID) {
         packetFlow.readPackets { [weak self] packets, _ in
             guard let self else { return }
             self.ioQueue.async {
                 guard self.generation == attempt, let engine = self.engine else { return }
-                for packet in packets { do { try engine.input(packet) } catch { /* Never log packet contents. */ } }
+                for packet in packets { self.inputPackets += 1; do { try engine.input(packet) } catch { self.inputErrors += 1 } }
                 self.readPackets(attempt: attempt)
             }
         }
     }
     func writePacket(_ packet: Data?) -> Bool {
-        stateLock.lock(); let active = running; stateLock.unlock()
+        stateLock.lock(); let active = running; if active { outputPackets += 1 }; stateLock.unlock()
         guard active, let packet, let first = packet.first else { return false }
         let family: Int32; switch first >> 4 { case 4: family = AF_INET; case 6: family = AF_INET6; default: return false }
-        return packetFlow.writePackets([packet], withProtocols: [NSNumber(value: family)])
+        let accepted = packetFlow.writePackets([packet], withProtocols: [NSNumber(value: family)])
+        if !accepted { stateLock.lock(); outputErrors += 1; stateLock.unlock() }
+        return accepted
     }
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
         ioQueue.async { completionHandler?(try? JSONSerialization.data(withJSONObject: ["engine": self.engine?.status() ?? "stopped"])) }

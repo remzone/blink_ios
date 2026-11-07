@@ -21,6 +21,7 @@ import (
 	_ "github.com/xtls/xray-core/app/policy"
 	_ "github.com/xtls/xray-core/app/proxyman/inbound"
 	_ "github.com/xtls/xray-core/app/proxyman/outbound"
+	corelog "github.com/xtls/xray-core/common/log"
 	"github.com/xtls/xray-core/common/session"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf/serial"
@@ -196,6 +197,7 @@ func startConfigOptions(raw []byte, sink PacketWriter, protector Protector, opt 
 		fail()
 		return nil, errors.New("packet stack initialization failed")
 	}
+	corelog.RegisterHandler(newDiagnosticCoreLog())
 	if err = instance.Start(); err != nil {
 		_ = stack.Close()
 		_ = adapter.Close()

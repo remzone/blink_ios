@@ -47,7 +47,7 @@ final class XrayVPNController: ObservableObject {
         catch { errorMessage = "Не удалось сохранить VLESS-профиль." }
     }
 
-    func connectUniversal(source: String, name: String, secrets: SecretStore) async {
+    func connectUniversal(source: String, name: String, secrets: SecretStore, diagnosticURL: String? = nil) async {
         guard !busy else { return }
         do {
             try NativeResources.prepare()
@@ -61,10 +61,10 @@ final class XrayVPNController: ObservableObject {
             let payload: [String: String] = ["schema": "blink.profile.v1", "source": source]
             let data = try JSONSerialization.data(withJSONObject: payload)
             profileName = name
-            await connect(json: String(decoding: data, as: UTF8.self), mode: "universal", server: "Blink VPN", captureAll: full, secrets: secrets)
+            await connect(json: String(decoding: data, as: UTF8.self), mode: "universal", server: "Blink VPN", captureAll: full, secrets: secrets, diagnosticURL: diagnosticURL)
         } catch { errorMessage = "Не удалось сохранить VPN-профиль." }
     }
-    func connect(profile: VokopSubscription.Profile, expiresAt: Int64, dnsServer: String, transport: String = "tcp", secrets: SecretStore) async {
+    func connect(profile: VokopSubscription.Profile, expiresAt: Int64, dnsServer: String, transport: String = "tcp", secrets: SecretStore, diagnosticURL: String? = nil) async {
         guard !busy else { return }
         guard manager == nil || [.invalid, .disconnected].contains(manager!.connection.status) else { errorMessage = "Сначала отключите текущий VPN."; return }
         struct VKProfile: Encodable {
@@ -75,6 +75,7 @@ final class XrayVPNController: ObservableObject {
         guard expiresAt > Int64(Date().timeIntervalSince1970), ["tcp", "udp"].contains(transport) else { errorMessage = "Подписка истекла или неверный транспорт."; return }
         let id = UUID(); operation = id; busy = true; errorMessage = nil
         route = .vk; profileName = profile.name; authorizationPhase = .starting
+        DiagnosticCenter.shared.begin(sourceURL: diagnosticURL, mode: 1, fields: ["streams": Int64(profile.turn.streams)])
         status = "Авторизация VK · используется обычная сеть"
         do {
             let existing = try await NETunnelProviderManager.loadAllFromPreferences().first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == SharedConstants.xrayTunnelBundleIdentifier }
@@ -84,7 +85,8 @@ final class XrayVPNController: ObservableObject {
             var value = VKProfile(uuid: profile.vless.uuid, peerHost: profile.turn.peer_host, peerPort: profile.turn.peer_port, vkCallURL: profile.turn.vk_call_url, streams: profile.turn.streams, expiresAt: expiresAt, dnsServer: dnsServer, turnTransport: transport)
             let data = try JSONEncoder().encode(value)
             value.bootstrap = try await authorization.authorize(String(decoding: data, as: UTF8.self)) { [weak self] phase in
-                guard let self, self.operation == id else { return }
+                guard let self, self.operation == id, self.authorizationPhase != phase else { return }
+                DiagnosticCenter.shared.record("captcha.phase", fields: DiagnosticStore.memory().merging(["phase": phase.diagnosticCode]) { _, new in new })
                 self.authorizationPhase = phase
                 self.status = phase.message
             }
@@ -94,6 +96,7 @@ final class XrayVPNController: ObservableObject {
             await connect(json: String(decoding: prepared, as: UTF8.self), mode: "vkturn", server: profile.turn.peer_host, secrets: secrets)
         } catch {
             guard operation == id else { return }
+            DiagnosticCenter.shared.record("connection.failed", fields: DiagnosticStore.errorFields(error), critical: true)
             busy = false; status = "Не подключён"
             if error is CancellationError { errorMessage = "Авторизация VK отменена. Повторите подключение." }
             else if let error = error as? VKAuthorizationError { errorMessage = error.localizedDescription }
@@ -102,9 +105,10 @@ final class XrayVPNController: ObservableObject {
         }
     }
 
-    private func connect(json: String, mode: String, server: String, captureAll: Bool = true, secrets: SecretStore) async {
+    private func connect(json: String, mode: String, server: String, captureAll: Bool = true, secrets: SecretStore, diagnosticURL: String? = nil) async {
         guard !hasActiveConnection else { errorMessage = "Сначала отключите текущий VPN."; return }
         route = ConnectionRoute.fromProviderMode(mode)
+        if mode != "vkturn" { DiagnosticCenter.shared.begin(sourceURL: diagnosticURL, mode: 0) }
         let attempt = UUID(); operation = attempt
         busy = true; errorMessage = nil
         defer { if operation == attempt { busy = false } }
@@ -122,7 +126,7 @@ final class XrayVPNController: ObservableObject {
             configuration.serverAddress = server
             configuration.includeAllNetworks = captureAll
             configuration.excludeLocalNetworks = captureAll
-            configuration.providerConfiguration = [SharedConstants.profileIDKey: credentialID.uuidString, "mode": mode]
+            configuration.providerConfiguration = [SharedConstants.profileIDKey: credentialID.uuidString, "mode": mode, "diagnosticsSessionID": DiagnosticCenter.shared.sessionID]
             manager.protocolConfiguration = configuration
             manager.localizedDescription = mode == "vkturn" ? "Blink — VK TURN" : "Blink — VPN"
             manager.isEnabled = true
@@ -133,10 +137,11 @@ final class XrayVPNController: ObservableObject {
             self.manager = manager
             try manager.connection.startVPNTunnel()
             consume(manager.connection.status)
-        } catch { if operation == attempt { errorMessage = "Не удалось запустить VPN. Проверьте разрешение и профиль." } }
+        } catch { if operation == attempt { DiagnosticCenter.shared.record("connection.failed", fields: DiagnosticStore.errorFields(error), critical: true); errorMessage = "Не удалось запустить VPN. Проверьте разрешение и профиль." } }
     }
 
     func disconnect() {
+        DiagnosticCenter.shared.requestedStop()
         operation = UUID()
         authorization.cancel(); busy = false
         manager?.connection.stopVPNTunnel()
@@ -180,13 +185,36 @@ final class XrayVPNController: ObservableObject {
             guard !busy, manager == nil else { return }
             manager = restored
             if let configuration = restored?.protocolConfiguration as? NETunnelProviderProtocol {
+                if let sessionID = configuration.providerConfiguration?["diagnosticsSessionID"] as? String { DiagnosticCenter.shared.resume(sessionID: sessionID) }
                 route = ConnectionRoute.fromProviderMode(configuration.providerConfiguration?["mode"] as? String)
                 profileName = route == .vk ? "Подключение через VK" : "Сохранённый VPN-профиль"
             }
-            if let manager { consume(manager.connection.status) }
+            if let manager {
+                consume(manager.connection.status)
+                if [.disconnected, .invalid].contains(manager.connection.status), FileManager.default.fileExists(atPath: DiagnosticStore.directory(DiagnosticCenter.shared.sessionID).appendingPathComponent("tunnel-active").path) {
+                    DiagnosticCenter.shared.disconnected()
+                    let recorder = DiagnosticCenter.shared.recorder
+                    manager.connection.fetchLastDisconnectError { error in
+                        if let error { recorder.record("provider.error", fields: DiagnosticStore.errorFields(error), critical: true) }
+                    }
+                }
+            }
         } catch { errorMessage = "Не удалось восстановить настройки VPN." }
     }
     private func consume(_ state: NEVPNStatus) {
+        let previous = connectionState
+        if previous != state {
+            DiagnosticCenter.shared.record("connection.state", fields: ["state": Int64(state.rawValue)], critical: true)
+            if state == .disconnected || state == .invalid {
+                DiagnosticCenter.shared.disconnected()
+                let recorder = DiagnosticCenter.shared.recorder
+                manager?.connection.fetchLastDisconnectError { error in
+                    guard let error else { return }
+                    let fields = DiagnosticStore.errorFields(error)
+                    recorder.record("provider.error", fields: fields, critical: true)
+                }
+            }
+        }
         connectionState = state
         switch state {
         case .connected: status = "VPN подключён · проверьте интернет"

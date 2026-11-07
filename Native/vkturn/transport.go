@@ -33,6 +33,7 @@ func (c *Client) createSession(ctx context.Context, peer *net.UDPAddr) (*smux.Se
 
 // Isolated from VK authentication so both TURN transports can be wire-tested locally.
 func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDPAddr, user, pass, raw string) (*smux.Session, func(), error) {
+	diagnosticStage("native.vk.turn_resolve", 1)
 	address, err := c.resolveTURN(ctx, raw)
 	if err != nil {
 		return nil, nil, err
@@ -47,6 +48,7 @@ func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDP
 	if err != nil {
 		return nil, nil, errors.New("TURN connection failed")
 	}
+	diagnosticStage("native.vk.turn_connected", 2)
 	// Allocate has no context parameter. Closing its underlying TCP connection
 	// interrupts pending transactions and all DTLS reads on cancellation.
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
@@ -91,6 +93,7 @@ func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDP
 	if err != nil {
 		return nil, nil, errors.New("TURN allocation failed")
 	}
+	diagnosticStage("native.vk.turn_allocated", 3)
 	closers = append(closers, func() { _ = relay.Close() })
 	cert, err := selfsign.GenerateSelfSigned()
 	if err != nil {
@@ -109,9 +112,12 @@ func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDP
 	closers = append(closers, func() { _ = dtlsConn.Close() })
 	handshakeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	diagnosticStage("native.vk.dtls_begin", 4)
 	if err = dtlsConn.HandshakeContext(handshakeCtx); err != nil {
+		diagnosticStage("native.vk.dtls_failed", 4)
 		return nil, nil, errors.New("DTLS handshake failed")
 	}
+	diagnosticStage("native.vk.dtls_ready", 5)
 	kcp, err := tcputil.NewKCPOverDTLS(dtlsConn, false)
 	if err != nil {
 		return nil, nil, errors.New("KCP creation failed")
@@ -122,6 +128,7 @@ func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDP
 		return nil, nil, errors.New("smux creation failed")
 	}
 	closers = append(closers, func() { _ = session.Close() })
+	diagnosticStage("native.vk.smux_ready", 6)
 	success = true
 	return session, cleanup, nil
 }

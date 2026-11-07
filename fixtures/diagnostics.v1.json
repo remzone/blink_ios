@@ -1,0 +1,48 @@
+[
+  {
+    "id": "f19dbd28-281a-4e8c-a611-4994ed0d0326",
+    "source": "extension",
+    "event": "extension.heartbeat",
+    "occurredAt": 1794070800000,
+    "elapsedMs": 5000,
+    "fields": {
+      "footprintBytes": 42000000,
+      "residentBytes": 43000000,
+      "heapBytes": 21000000,
+      "goBytes": 31000000,
+      "heapObjects": 1000,
+      "gcCycles": 5,
+      "goroutines": 22,
+      "txBytes": 1200,
+      "rxBytes": 1800,
+      "inputPackets": 10,
+      "outputPackets": 11,
+      "inputErrors": 0,
+      "outputErrors": 0,
+      "uptimeMs": 5000,
+      "queueDelayMs": 3
+    }
+  },
+  {
+    "id": "a16e220c-fbb3-4ed5-8eee-e8907b34ed72",
+    "source": "native",
+    "event": "native.vk.retry",
+    "occurredAt": 1794070801000,
+    "elapsedMs": 6000,
+    "fields": {
+      "stage": 5,
+      "stream": 0
+    }
+  },
+  {
+    "id": "cdbb8c1f-7d98-407f-b36d-b7e3816dbad4",
+    "source": "app",
+    "event": "provider.error",
+    "occurredAt": 1794070802000,
+    "elapsedMs": 7000,
+    "fields": {
+      "errorDomain": 2,
+      "errorCode": 1
+    }
+  }
+]

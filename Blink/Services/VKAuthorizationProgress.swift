@@ -2,6 +2,9 @@ import Foundation
 
 enum VKAuthorizationPhase: Equatable {
     case starting, captcha, verifying, transport, ready
+    var diagnosticCode: Int64 {
+        switch self { case .starting: return 0; case .captcha: return 1; case .verifying: return 2; case .transport: return 3; case .ready: return 4 }
+    }
     var message: String {
         switch self {
         case .starting: return "Авторизация VK · используется обычная сеть"

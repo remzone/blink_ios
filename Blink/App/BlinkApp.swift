@@ -9,6 +9,7 @@ struct BlinkApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .task { DiagnosticCenter.shared.start() }
                 .environmentObject(container)
                 .environmentObject(xray)
                 .environmentObject(xray.authorization)

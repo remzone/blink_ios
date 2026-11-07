@@ -132,7 +132,7 @@ struct SubscriptionView: View {
                 VStack(alignment: .leading) { BlinkPill(title: "Через VK", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: "VLESS", color: BlinkTheme.vk) }
             }
             Text("Авторизация VK → VK TURN → VPN-сервер").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button { Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, transport: transport, secrets: container.secretStore) } } label: {
+            Button { Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, transport: transport, secrets: container.secretStore, diagnosticURL: lastURL) } } label: {
                 Label("Подключить через VK", systemImage: "power")
             }.buttonStyle(BlinkActionStyle(prominent: true, color: Color(red: 0.75, green: 0.78, blue: 1))).disabled(xray.hasActiveConnection)
         }.frame(maxWidth: .infinity, alignment: .leading).blinkCard()

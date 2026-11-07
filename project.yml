@@ -74,6 +74,7 @@ targets:
     platform: iOS
     sources:
       - path: Blink/XrayExtension
+      - path: Blink/Diagnostics
       - path: Blink/Models/XrayProfile.swift
       - path: Blink/Models/UniversalProfile.swift
       - path: Blink/Models/SharedConstants.swift

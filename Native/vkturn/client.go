@@ -263,6 +263,7 @@ func (c *Client) maintain(id int) {
 			session, cleanup, err = c.factory(c.networkCtx, peer)
 		}
 		if err != nil {
+			RecordDiagnostic("native.vk.retry", map[string]int64{"stream": int64(id), "stage": diagnosticFailureStage(err)})
 			if errors.Is(err, ErrCaptchaRequired) {
 				c.paused.Store(true)
 				c.setState("captcha_required")
@@ -282,6 +283,7 @@ func (c *Client) maintain(id int) {
 		select {
 		case <-c.networkCtx.Done():
 		case <-session.CloseChan():
+			RecordDiagnostic("native.vk.smux_closed", map[string]int64{"stream": int64(id)})
 		}
 		c.mu.Lock()
 		for i, s := range c.sessions {

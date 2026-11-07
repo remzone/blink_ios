@@ -103,7 +103,7 @@ func startWireGuard(p ImportedProfile, sink PacketWriter, protector Protector) (
 	}
 	adapter := &packetAdapter{sink: sink}
 	packets := newWGPacketDevice(adapter, c.MTU)
-	logger := &device.Logger{Verbosef: func(string, ...any) {}, Errorf: func(string, ...any) {}}
+	logger := &device.Logger{Verbosef: func(string, ...any) {}, Errorf: func(string, ...any) { recordWGDiagnosticError() }}
 	d := device.NewDevice(packets, &protectedWGBind{protector: protector}, logger)
 	if e = d.IpcSet(uapi); e != nil {
 		d.Close()

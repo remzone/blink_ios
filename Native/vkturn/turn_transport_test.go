@@ -20,7 +20,7 @@ import (
 func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 	for _, network := range []string{"tcp", "udp"} {
 		t.Run(network, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
 			logger := &logging.DefaultLoggerFactory{Writer: io.Discard, DefaultLogLevel: logging.LogLevelDisabled}
 			cfg := turn.ServerConfig{Realm: "fixture", AuthHandler: func(ra *turn.RequestAttributes) (string, []byte, bool) {
@@ -62,6 +62,7 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 			stop := context.AfterFunc(ctx, func() { peer.Close() })
 			defer stop()
 			done := make(chan error, 1)
+			received := make(chan struct{})
 			go func() {
 				conn, e := peer.Accept()
 				if e != nil {
@@ -94,10 +95,23 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 				}
 				defer stream.Close()
 				b := make([]byte, 5)
-				if _, e = io.ReadFull(stream, b); e == nil {
-					_, e = stream.Write(b)
+				for round := 0; round < 4; round++ {
+					if _, e = io.ReadFull(stream, b); e != nil {
+						done <- e
+						return
+					}
+					if _, e = stream.Write(b); e != nil {
+						done <- e
+						return
+					}
 				}
-				done <- e
+				done <- nil
+				// smux Write queues data; closing mux immediately can discard the
+				// echo before the peer reads it. Keep the fixture alive until ack.
+				select {
+				case <-received:
+				case <-ctx.Done():
+				}
 			}()
 			var protected atomic.Int32
 			c := &Client{config: Config{TURNTransport: network}, resolver: net.DefaultResolver, dialer: &net.Dialer{Timeout: time.Second, Control: func(_, _ string, raw syscall.RawConn) error { return raw.Control(func(uintptr) { protected.Add(1) }) }}}
@@ -111,17 +125,25 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 				t.Fatal(e)
 			}
 			defer stream.Close()
-			stream.SetDeadline(time.Now().Add(2 * time.Second))
-			if _, e = stream.Write([]byte("hello")); e != nil {
-				t.Fatal(e)
+			for round := 0; round < 4; round++ {
+				stream.SetDeadline(time.Now().Add(4 * time.Second))
+				if _, e = stream.Write([]byte("hello")); e != nil {
+					t.Fatal(e)
+				}
+				b := make([]byte, 5)
+				if _, e = io.ReadFull(stream, b); e != nil {
+					t.Fatal(e)
+				}
+				if string(b) != "hello" {
+					t.Fatal("invalid relay payload")
+				}
+				if round < 3 {
+					if e = pause(ctx, 2*time.Second); e != nil {
+						t.Fatal(e)
+					}
+				}
 			}
-			b := make([]byte, 5)
-			if _, e = io.ReadFull(stream, b); e != nil {
-				t.Fatal(e)
-			}
-			if string(b) != "hello" {
-				t.Fatal("invalid relay payload")
-			}
+			close(received)
 			if e = <-done; e != nil {
 				t.Fatal(e)
 			}

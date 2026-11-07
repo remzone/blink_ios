@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-enum SecretKind: String, CaseIterable { case wireGuardPrivateKey, obfuscationKey, subscriptionURL, standardSubscriptionURL, xrayProfile, universalProfiles }
+enum SecretKind: String, CaseIterable { case wireGuardPrivateKey, obfuscationKey, subscriptionURL, standardSubscriptionURL, xrayProfile, universalProfiles, diagnostics }
 
 protocol SecretStore {
     func save(_ value: String, profileID: UUID, kind: SecretKind) throws

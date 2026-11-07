@@ -34,7 +34,11 @@ struct RootView: View {
         .tint(BlinkTheme.accent)
         .sheet(item: $authorizer.modern) { challenge in ModernVKCaptchaView(challenge: challenge) }
         .sheet(item: $authorizer.legacy) { challenge in LegacyVKCaptchaView(challenge: challenge) }
-        .onChange(of: phase) { if $0 == .background { authorizer.cancel() } }
+        .onChange(of: phase) {
+            DiagnosticCenter.shared.setForeground($0 == .active)
+            if $0 == .background { DiagnosticCenter.shared.record("app.background", critical: true); authorizer.cancel() }
+            else if $0 == .active { DiagnosticCenter.shared.record("app.foreground"); Task { await DiagnosticCenter.shared.flushNow() } }
+        }
     }
     @ViewBuilder private func destination(_ tab: BlinkTab) -> some View {
         switch tab {

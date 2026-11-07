@@ -79,6 +79,7 @@ func (c *Client) SubmitCaptcha(id, kind, value string) bool {
 	select {
 	case p.result <- captchaAnswer{kind, value}:
 		p.submitted = true
+		diagnosticStage("native.vk.captcha_submitted", 0)
 		return true
 	default:
 		return false
@@ -99,6 +100,7 @@ func (c *Client) awaitCaptcha(ctx context.Context, fields map[string]interface{}
 	c.captchaMu.Lock()
 	c.challenge = p
 	c.captchaMu.Unlock()
+	diagnosticStage("native.vk.captcha_required", 0)
 	c.setState("captcha_required")
 	defer func() {
 		c.captchaMu.Lock()

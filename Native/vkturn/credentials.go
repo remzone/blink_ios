@@ -46,6 +46,7 @@ var vkCredentialsList = []VKCredentials{
 }
 
 func (c *Client) tokenChain(ctx context.Context, link string, creds VKCredentials, jar tlsclient.CookieJar) (string, string, string, error) {
+	diagnosticStage("native.vk.credentials_begin", 0)
 	profile := Profile{
 		UserAgent:       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
 		SecChUa:         `"Not(A:Brand";v="99", "Google Chrome";v="146", "Chromium";v="146"`,
@@ -73,6 +74,18 @@ func (c *Client) tokenChain(ctx context.Context, link string, creds VKCredential
 			return nil, fmt.Errorf("parse request URL: %w", err)
 		}
 		domain := parsedURL.Hostname()
+		stage := int64(0)
+		switch parsedURL.Hostname() + parsedURL.Path {
+		case "login.vk.ru/":
+			stage = 1
+		case "api.vk.ru/method/calls.getCallPreview":
+			stage = 2
+		case "api.vk.ru/method/calls.getAnonymousToken":
+			stage = 3
+		case "calls.okcdn.ru/fb.do":
+			stage = 4
+		}
+		RecordDiagnostic("native.vk.request", map[string]int64{"stage": stage})
 
 		req, err := fhttp.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer([]byte(data)))
 		if err != nil {
@@ -95,6 +108,7 @@ func (c *Client) tokenChain(ctx context.Context, link string, creds VKCredential
 			return nil, err
 		}
 		defer httpResp.Body.Close()
+		RecordDiagnostic("native.vk.response", map[string]int64{"stage": stage, "httpStatus": int64(httpResp.StatusCode)})
 		if httpResp.StatusCode != 200 {
 			return nil, errors.New("VK HTTP request rejected")
 		}
@@ -104,6 +118,14 @@ func (c *Client) tokenChain(ctx context.Context, link string, creds VKCredential
 			return nil, err
 		}
 
+		var diagnosticResponse struct {
+			Error struct {
+				Code int64 `json:"error_code"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &diagnosticResponse) == nil && diagnosticResponse.Error.Code != 0 {
+			RecordDiagnostic("native.vk.credentials_failed", map[string]int64{"stage": stage, "errorCode": diagnosticResponse.Error.Code})
+		}
 		return parseVKResponse(body)
 	}
 
@@ -267,6 +289,7 @@ func (c *Client) credentials(ctx context.Context) (string, string, string, error
 		}
 		if e == nil {
 			c.username, c.password, c.turnAddress = u, p, a
+			diagnosticStage("native.vk.credentials_ready", 0)
 			c.credsUntil = time.Now().Add(9 * time.Minute)
 			return u, p, a, nil
 		}

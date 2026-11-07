@@ -13,6 +13,8 @@ final class VKPreflightAuthorizer: NSObject, ObservableObject, MobilePacketWrite
     @Published var modern: ModernChallenge?
     private let protector = XraySocketProtector()
     private var engine: MobileEngine?
+    private var starting = false
+    private let nativeQueue = DispatchQueue(label: "com.blink.vk.preflight-core", qos: .userInitiated)
     private var sdk: VKCaptcha?
     private var attempt = UUID()
     private var answer: CheckedContinuation<String, Error>?
@@ -21,23 +23,46 @@ final class VKPreflightAuthorizer: NSObject, ObservableObject, MobilePacketWrite
     nonisolated func writePacket(_ packet: Data?) -> Bool { true }
 
     func authorize(_ json: String, onProgress: (VKAuthorizationPhase) -> Void = { _ in }) async throws -> String {
-        guard engine == nil else { throw VKAuthorizationError.alreadyRunning }
-        let id = UUID(); attempt = id; protector.start()
+        guard engine == nil, !starting else { throw VKAuthorizationError.alreadyRunning }
+        let id = UUID(); attempt = id; protector.diagnostics = DiagnosticCenter.shared.recorder; protector.start()
+        _ = MobileConfigureRuntime(96 * 1024 * 1024, 100)
         onProgress(.starting)
-        var error: NSError?; engine = MobileStartVK(json, self, protector, &error)
-        guard error == nil, engine != nil else {
-            engine?.stop(); engine = nil; protector.stop()
-            throw VKAuthorizationError.startFailed
+        starting = true
+        let started: MobileEngine
+        let protector = self.protector
+        let diagnosticSessionID = DiagnosticCenter.shared.sessionID
+        do {
+            started = try await withCheckedThrowingContinuation { continuation in
+                nativeQueue.async { [self] in
+                    _ = MobileSetDiagnosticSession(diagnosticSessionID)
+                    var error: NSError?
+                    let value = MobileStartVK(json, self, protector, &error)
+                    if error != nil || value == nil { value?.stop(); continuation.resume(throwing: VKAuthorizationError.startFailed) }
+                    else { continuation.resume(returning: value!) }
+                }
+            }
+        } catch {
+            starting = false; protector.stop(); throw error
         }
-        defer { if attempt == id { cancel() } }
+        starting = false
+        guard attempt == id, !Task.isCancelled else {
+            nativeQueue.async { started.stop() }; throw CancellationError()
+        }
+        engine = started
+        defer { if attempt == id { DiagnosticCenter.shared.drainNative(); cancel() } }
         let deadline = Date().addingTimeInterval(300)
         var progress = VKAuthorizationProgress()
         while Date() < deadline {
             try Task.checkCancellation()
             guard attempt == id, let engine else { throw CancellationError() }
+            DiagnosticCenter.shared.drainNative()
             let status = engine.status()
             if status == "ready" {
-                let handoff = engine.exportVKBootstrap()
+                let handoff = await withCheckedContinuation { continuation in
+                    nativeQueue.async { continuation.resume(returning: engine.exportVKBootstrap()) }
+                }
+                try Task.checkCancellation()
+                guard attempt == id else { throw CancellationError() }
                 if !handoff.isEmpty { onProgress(.ready); return handoff }
                 // Readiness can change between Status and ExportVKBootstrap.
             } else if status == "captcha_required" {
@@ -77,7 +102,8 @@ final class VKPreflightAuthorizer: NSObject, ObservableObject, MobilePacketWrite
         attempt = UUID()
         finish(.failure(CancellationError()))
         sdk = nil
-        engine?.stop(); engine = nil; protector.stop()
+        let previous = engine; engine = nil; protector.stop()
+        nativeQueue.async { previous?.stop() }
     }
     func submitLegacy(_ code: String) {
         guard let id = legacy?.id else { return }

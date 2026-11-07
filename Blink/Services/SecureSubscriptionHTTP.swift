@@ -17,6 +17,8 @@ final class SecureSubscriptionHTTP: NSObject, URLSessionTaskDelegate {
 
     func fetch(_ value: String, accept: String = "text/plain, application/octet-stream;q=0.9") async throws -> Data {
         let url = try Self.validatedURL(value)
+        let diagnostics = await MainActor.run { DiagnosticCenter.shared.recorder }
+        diagnostics.record("subscription.fetch")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
@@ -32,6 +34,7 @@ final class SecureSubscriptionHTTP: NSObject, URLSessionTaskDelegate {
         do {
             let (bytes, response) = try await session.bytes(for: request)
             guard let http = response as? HTTPURLResponse else { throw SubscriptionError.requestFailed }
+            diagnostics.record("subscription.result", fields: ["httpStatus": Int64(http.statusCode)])
             if [401, 403, 404].contains(http.statusCode) { throw SubscriptionError.accessDenied }
             guard http.statusCode == 200 else { throw NetworkRequestError.httpStatus(http.statusCode) }
             guard response.expectedContentLength <= Int64(Self.maximumBytes) else { throw SubscriptionError.responseTooLarge }
@@ -51,6 +54,7 @@ final class SecureSubscriptionHTTP: NSObject, URLSessionTaskDelegate {
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
         } catch {
+            diagnostics.record("subscription.result", fields: DiagnosticStore.errorFields(error))
             throw NetworkRequestError.sanitized(error)
         }
     }
