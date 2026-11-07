@@ -39,10 +39,22 @@ final class StandardSubscriptionTests: XCTestCase {
         let nodes = try StandardSubscription.parse(Data(mixed.utf8))
         XCTAssertEqual(nodes.count, 2); XCTAssertNotNil(nodes[1].rejection)
     }
-    func testHTTPSURLWithScopedQueryAllowedButCredentialsAndRedirectTargetsNotImported() {
+    func testHTTPSURLWithScopedQueryAllowedButCredentialsRejected() {
         XCTAssertNoThrow(try SecureSubscriptionHTTP.validatedURL("https://panel.example/sub/user?token=fixture-only"))
         for url in ["http://panel.example/sub/user", "https://user:password@panel.example/sub", "https://panel.example/sub#fragment"] {
             XCTAssertThrowsError(try SecureSubscriptionHTTP.validatedURL(url))
         }
     }
+    func testRedirectsStayOnOriginalHTTPSOriginAndHaveABoundedCount() throws {
+        let original = try XCTUnwrap(URL(string: "https://panel.example/sub/fixture"))
+        for target in ["https://panel.example/sub/fixture/", "https://PANEL.example:443/next?token=fixture"] {
+            XCTAssertTrue(SecureSubscriptionHTTP.allowsRedirect(from: original, to: try XCTUnwrap(URL(string: target)), count: 1))
+        }
+        for target in ["http://panel.example/next", "https://other.example/next", "https://panel.example:8443/next", "https://user:password@panel.example/next", "https://panel.example/next#fragment"] {
+            XCTAssertFalse(SecureSubscriptionHTTP.allowsRedirect(from: original, to: try XCTUnwrap(URL(string: target)), count: 1))
+        }
+        XCTAssertTrue(SecureSubscriptionHTTP.allowsRedirect(from: original, to: original, count: 5))
+        XCTAssertFalse(SecureSubscriptionHTTP.allowsRedirect(from: original, to: original, count: 6))
+    }
+
 }

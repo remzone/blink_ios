@@ -74,6 +74,8 @@ struct StandardSubscriptionView: View {
             } catch is CancellationError {
             } catch let error as SubscriptionError {
                 if requestID == id { message = error.localizedDescription }
+            } catch let error as NetworkRequestError {
+                if requestID == id { message = error.localizedDescription }
             } catch {
                 if requestID == id { message = "Could not store the subscription URL securely." }
             }

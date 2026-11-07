@@ -1,6 +1,6 @@
 import Foundation
 
-/// No cookies, disk cache, redirects, or credential-bearing error descriptions.
+/// No cookies, disk cache, cross-origin redirects, or credential-bearing error descriptions.
 final class VokopSubscriptionClient {
     static let maximumBytes = 128 * 1024
 

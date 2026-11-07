@@ -106,6 +106,8 @@ struct SubscriptionView: View {
                 // Dismissal/Forget must not repopulate a cleared screen.
             } catch let error as SubscriptionError {
                 if requestID == id { message = error.localizedDescription }
+            } catch let error as NetworkRequestError {
+                if requestID == id { message = error.localizedDescription }
             } catch {
                 if requestID == id { message = "Не удалось сохранить подписку." }
             }

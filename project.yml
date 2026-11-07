@@ -57,6 +57,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Blink
+        INFOPLIST_KEY_NSCameraUsageDescription: Камера нужна для сканирования QR-кода VPN-подписки или конфигурации.
         INFOPLIST_KEY_BlinkKeychainAccessGroup: $(KEYCHAIN_GROUP_ID)
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES

@@ -29,7 +29,7 @@ not establish iOS runtime compatibility. The user requested source-only iOS work
   between physical interfaces is not implemented; reconnect manually.
 - Transport readiness is distinct from remote handshake or actual internet.
   Generic core `running` means initialized. The source UI says connectivity is
-  unverified. Both source UIs expose separate HTTPS probes; only Android has device validation. iOS diagnostics call native ProbeInternet and remain unverified on Apple devices.
+  unverified. Both source UIs expose separate HTTPS probes; only Android has device validation. iOS diagnostics use URLSession for ordinary/tunnel requests and native ProbeInternet only for physical bypass while the VPN is active; both paths remain unverified on Apple devices.
 
 ## Routing and DNS
 

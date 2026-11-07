@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PhotosUI
 
 struct UniversalProfilesView: View {
     @Environment(\.horizontalSizeClass) private var widthClass
@@ -16,6 +17,12 @@ struct UniversalProfilesView: View {
     @State private var message: String?
     @State private var importing = false
     @State private var filePresented = false
+    @State private var scannerPresented = false
+    @State private var scannedText: String?
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var readingPhoto = false
+    @State private var photoID = UUID()
+    @State private var photoTask: Task<Void, Never>?
     @State private var importID = UUID()
     @State private var importTask: Task<Void, Never>?
     private let vaultID = UUID(uuidString: "81487391-25f0-41c7-a31c-1454e4c18400")!
@@ -25,11 +32,26 @@ struct UniversalProfilesView: View {
                 BlinkHeader(title: "Мир ближе,\nчем кажется.", subtitle: "Твои серверы, страны и подписки — в одном месте.")
                 VStack(alignment: .leading, spacing: 16) {
                     Label("Добавить подключение", systemImage: "plus.circle").font(.headline)
-                    SecureField("URI или HTTPS-подписка", text: $input).textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
-                    Button { importText(input) } label: { Label(importing ? "Добавляем…" : "Добавить в Blink", systemImage: "plus") }.buttonStyle(BlinkActionStyle(prominent: true)).disabled(importing || input.isEmpty)
-                    Button { filePresented = true } label: { Label("Открыть файл конфигурации", systemImage: "doc.badge.plus") }.buttonStyle(BlinkActionStyle()).disabled(importing)
+                    Text("Ссылка, список ссылок или текст конфигурации").font(.caption).foregroundStyle(.secondary)
+                    TextEditor(text: $input)
+                        .frame(minHeight: 100, maxHeight: 180)
+                        .font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .privacySensitive().disabled(importing || readingPhoto)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.25)))
+                    PasteButton(payloadType: String.self) { values in
+                        guard let text = values.first else { return }
+                        input = text
+                    }.disabled(importing || readingPhoto)
+                    Button { importText(input) } label: { Label(importing ? "Добавляем…" : "Добавить в Blink", systemImage: "plus") }.buttonStyle(BlinkActionStyle(prominent: true)).disabled(importing || readingPhoto || input.isEmpty)
+                    Button { filePresented = true } label: { Label("Открыть файл конфигурации", systemImage: "doc.badge.plus") }.buttonStyle(BlinkActionStyle()).disabled(importing || readingPhoto)
+                    Button { scannerPresented = true } label: { Label("Сканировать QR камерой", systemImage: "qrcode.viewfinder") }
+                        .buttonStyle(BlinkActionStyle()).disabled(importing || readingPhoto)
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Label("QR из фото", systemImage: "photo")
+                    }.buttonStyle(BlinkActionStyle()).disabled(importing || readingPhoto)
+                    if readingPhoto { ProgressView("Читаем QR-код…") }
                     if importing { ProgressView("Проверяем профили…") }
-                    Text("Xray, WireGuard, AmneziaWG, TUIC и Hysteria. Обычные подключения работают без VK и CAPTCHA.").font(.caption).foregroundStyle(.secondary)
+                    Text("VLESS, VMess, Trojan, Shadowsocks, WireGuard / AmneziaWG, TUIC и Hysteria. Подписки plain/base64, Xray JSON и узлы Clash YAML. QR может содержать ссылку или сам конфиг.").font(.caption).foregroundStyle(.secondary)
                 }.blinkCard()
                 if let message { BlinkNotice(message: message) }
                 if !profiles.isEmpty {
@@ -51,7 +73,7 @@ struct UniversalProfilesView: View {
                     }
                 }
                 ForEach(Array(Set(profiles.compactMap(\.subscriptionURL))).sorted(), id: \.self) { url in
-                    Button { importText(url) } label: { BlinkDestination(title: "Обновить подписку", subtitle: URLComponents(string: url)?.host ?? "Провайдер", symbol: "arrow.clockwise") }.buttonStyle(BlinkActionStyle()).disabled(importing)
+                    Button { importText(url) } label: { BlinkDestination(title: "Обновить подписку", subtitle: URLComponents(string: url)?.host ?? "Провайдер", symbol: "arrow.clockwise") }.buttonStyle(BlinkActionStyle()).disabled(importing || readingPhoto)
                 }
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Соединение", systemImage: "waveform.path.ecg").font(.headline)
@@ -68,6 +90,19 @@ struct UniversalProfilesView: View {
             Button("Оставить", role: .cancel) { pendingDelete = nil }
         }
         .task { load() }
+        .sheet(isPresented: $scannerPresented, onDismiss: {
+            if let text = scannedText { scannedText = nil; importText(text) }
+        }) {
+            QRScannerView(onResult: { text in
+                scannedText = text; scannerPresented = false
+            }, onFailure: { error in
+                message = error; scannerPresented = false
+            })
+        }
+        .onChange(of: selectedPhoto) { item in
+            guard let item else { return }
+            readQRPhoto(item)
+        }
         .fileImporter(isPresented: $filePresented, allowedContentTypes: [.data, .plainText, .json]) { result in
             do {
                 let url = try result.get(); let granted = url.startAccessingSecurityScopedResource()
@@ -78,18 +113,40 @@ struct UniversalProfilesView: View {
                 importText(text)
             } catch { message = "Файл не прочитан или превышает 1 МБ." }
         }
-        .onDisappear { input = ""; importID = UUID(); importTask?.cancel(); importing = false }
+        .onDisappear { input = ""; importID = UUID(); importTask?.cancel(); importing = false; photoID = UUID(); photoTask?.cancel(); readingPhoto = false }
+    }
+    private func readQRPhoto(_ item: PhotosPickerItem) {
+        photoTask?.cancel()
+        let id = UUID(); photoID = id
+        readingPhoto = true; message = nil
+        photoTask = Task { @MainActor in
+            defer { if photoID == id { readingPhoto = false; selectedPhoto = nil } }
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { throw QRImageError.unreadable }
+                try Task.checkCancellation()
+                let text = try await Task.detached(priority: .userInitiated) { try QRImageDecoder.decode(data) }.value
+                try Task.checkCancellation()
+                importText(text)
+            } catch is CancellationError { }
+            catch let error as QRImageError { if photoID == id { message = error.localizedDescription } }
+            catch { if photoID == id && !Task.isCancelled { message = "Не удалось прочитать QR из фото. Выберите другое изображение." } }
+        }
     }
     private func importText(_ source: String) {
         guard !importing else { return }; importing = true; message = nil; let id = UUID(); importID = id
         importTask = Task { @MainActor in
             defer { if importID == id { importing = false } }
             do {
-                var text = source; var subscriptionURL: String?
-                if source.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("https://"), URLComponents(string: source.trimmingCharacters(in: .whitespacesAndNewlines))?.user == nil {
-                    subscriptionURL = source.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let data = try await SecureSubscriptionHTTP().fetch(subscriptionURL!)
-                    guard let value = String(data: data, encoding: .utf8) else { throw UniversalProfileError.invalid }; text = value
+                let text: String
+                let subscriptionURL: String?
+                switch try ProfileImportInput.parse(source) {
+                case .subscription(let url):
+                    subscriptionURL = url
+                    let data = try await SecureSubscriptionHTTP().fetch(url)
+                    guard let value = String(data: data, encoding: .utf8) else { throw UniversalProfileError.invalid }
+                    text = value
+                case .configuration(let value):
+                    subscriptionURL = nil; text = value
                 }
                 try Task.checkCancellation()
                 guard importID == id else { return }
@@ -102,6 +159,9 @@ struct UniversalProfilesView: View {
                 try container.secretStore.save(String(decoding: data, as: UTF8.self), profileID: vaultID, kind: .universalProfiles)
                 profiles = next; input = ""; message = "Добавлено: \(added.count). Отклонено: \(rejected). \(notice)"
             } catch is CancellationError { }
+            catch let error as ProfileImportInputError { if importID == id { message = error.localizedDescription } }
+            catch let error as SubscriptionError { if importID == id { message = error.localizedDescription } }
+            catch let error as NetworkRequestError { if importID == id { message = error.localizedDescription } }
             catch { if importID == id { message = "Импорт не выполнен. Проверьте протокол, настройки и HTTPS-подписку." } }
         }
     }
