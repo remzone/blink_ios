@@ -1,22 +1,51 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @State private var guidePresented = false
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0" }
+    private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                BlinkHeader(title: "Всё на своих местах.", subtitle: "Немного о Blink и твоём устройстве.")
-                NavigationLink { LogsView() } label: { BlinkDestination(title: "История соединений", subtitle: "Что происходило с подключением", symbol: "text.alignleft") }.buttonStyle(BlinkActionStyle())
-                VStack(alignment: .leading, spacing: 18) {
-                    BlinkBadge(symbol: "sparkles")
-                    Text("Просто Blink").font(.title2.weight(.semibold))
-                    Text("Одно место для твоих подключений. На большом экране, планшете или в кармане.").foregroundStyle(.secondary)
-                    Divider()
-                    LabeledContent("Платформа", value: "iOS / iPadOS 16+")
-                    LabeledContent("Подключения", value: "Xray · WireGuard · AmneziaWG · VK TURN")
-                }.blinkCard()
-                BlinkNotice(message: "Ссылки подписок и конфигурации находятся в защищённом хранилище. Ключи не передаются в интерфейс лаунчера.", symbol: "lock.shield")
-                BlinkNotice(message: "Blink уважает системную настройку «Уменьшение движения». Размер текста и светлая или тёмная тема следуют настройкам устройства.", symbol: "accessibility")
-            }.padding(22).frame(maxWidth: 760).frame(maxWidth: .infinity)
-        }.navigationTitle("Настройки").navigationBarTitleDisplayMode(.inline).blinkScreen()
+        List {
+            Section {
+                HStack(spacing: 16) {
+                    Image(systemName: "bolt.shield.fill").font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(BlinkTheme.primaryFill).frame(width: 68, height: 68)
+                        .background(BlinkTheme.ink, in: RoundedRectangle(cornerRadius: 22))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Blink").font(.system(.title2, design: .rounded).weight(.bold))
+                        Text("Ваша сеть, под вашим контролем").font(.caption).foregroundStyle(.secondary)
+                        Text("Версия \(version) · сборка \(build)").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }.padding(.vertical, 8)
+            }
+            Section("Помощь и диагностика") {
+                Button { guidePresented = true } label: {
+                    settingsRow("Режимы и конфигурации", detail: "Обычный VPN, VK и типы профилей", symbol: "questionmark.circle.fill", color: BlinkTheme.vk)
+                }.foregroundStyle(.primary)
+                NavigationLink { LogsView() } label: {
+                    settingsRow("Журнал событий", detail: "Сообщения, сохранённые приложением", symbol: "text.alignleft", color: BlinkTheme.ice)
+                }
+            }
+            Section("На вашем устройстве") {
+                settingsRow("Защищённое хранение", detail: "Ссылки и ключи находятся в Keychain", symbol: "lock.fill", color: BlinkTheme.accent)
+                settingsRow("Системное оформление", detail: "Тема и размер текста следуют iOS", symbol: "circle.lefthalf.filled", color: BlinkTheme.ice)
+                settingsRow("Бережные анимации", detail: "Учитывается «Уменьшение движения»", symbol: "figure.walk", color: BlinkTheme.vk)
+            }
+            Section {
+                Text("Blink подключается к серверам из ваших конфигураций. Подписки и доступ к серверам предоставляет ваш провайдер.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }.listStyle(.insetGrouped).blinkScreen().navigationTitle("Настройки").navigationBarTitleDisplayMode(.large)
+            .sheet(isPresented: $guidePresented) { ProtocolGuideView() }
+    }
+    private func settingsRow(_ title: String, detail: String, symbol: String, color: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(color)
+                .frame(width: 32, height: 32).background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.subheadline.weight(.medium))
+                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }.padding(.vertical, 5)
     }
 }

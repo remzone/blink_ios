@@ -10,6 +10,12 @@ final class XrayVPNController: ObservableObject {
     @Published private(set) var errorMessage: String?
     let authorization = VKPreflightAuthorizer()
     @Published private(set) var profileName = "Выберите VPN-профиль"
+    @Published private(set) var authorizationPhase: VKAuthorizationPhase = .starting
+    @Published private(set) var route: ConnectionRoute?
+    @Published private(set) var connectionState: NEVPNStatus = .disconnected
+    var isConnecting: Bool { busy || connectionState == .connecting || connectionState == .reasserting }
+    var isDisconnecting: Bool { connectionState == .disconnecting }
+    var hasActiveConnection: Bool { isConnected || isConnecting || isDisconnecting }
     var isConnected: Bool { manager?.connection.status == .connected }
     private var operation = UUID()
     private var manager: NETunnelProviderManager?
@@ -68,6 +74,7 @@ final class XrayVPNController: ObservableObject {
         }
         guard expiresAt > Int64(Date().timeIntervalSince1970), ["tcp", "udp"].contains(transport) else { errorMessage = "Подписка истекла или неверный транспорт."; return }
         let id = UUID(); operation = id; busy = true; errorMessage = nil
+        route = .vk; profileName = profile.name; authorizationPhase = .starting
         status = "Авторизация VK · используется обычная сеть"
         do {
             let existing = try await NETunnelProviderManager.loadAllFromPreferences().first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == SharedConstants.xrayTunnelBundleIdentifier }
@@ -78,6 +85,7 @@ final class XrayVPNController: ObservableObject {
             let data = try JSONEncoder().encode(value)
             value.bootstrap = try await authorization.authorize(String(decoding: data, as: UTF8.self)) { [weak self] phase in
                 guard let self, self.operation == id else { return }
+                self.authorizationPhase = phase
                 self.status = phase.message
             }
             guard operation == id else { return }; busy = false
@@ -95,10 +103,11 @@ final class XrayVPNController: ObservableObject {
     }
 
     private func connect(json: String, mode: String, server: String, captureAll: Bool = true, secrets: SecretStore) async {
-        guard !busy else { return }
+        guard !hasActiveConnection else { errorMessage = "Сначала отключите текущий VPN."; return }
+        route = ConnectionRoute.fromProviderMode(mode)
         let attempt = UUID(); operation = attempt
         busy = true; errorMessage = nil
-        defer { busy = false }
+        defer { if operation == attempt { busy = false } }
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
             guard operation == attempt else { return }
@@ -124,14 +133,15 @@ final class XrayVPNController: ObservableObject {
             self.manager = manager
             try manager.connection.startVPNTunnel()
             consume(manager.connection.status)
-        } catch { errorMessage = "Не удалось запустить VPN. Проверьте разрешение и профиль." }
+        } catch { if operation == attempt { errorMessage = "Не удалось запустить VPN. Проверьте разрешение и профиль." } }
     }
 
     func disconnect() {
         operation = UUID()
         authorization.cancel(); busy = false
         manager?.connection.stopVPNTunnel()
-        status = manager == nil ? "Отключён" : "Отключение…"
+        if let manager { consume(manager.connection.status) }
+        else { consume(.disconnected) }
     }
 
     func refreshTransportStatus() async {
@@ -169,10 +179,15 @@ final class XrayVPNController: ObservableObject {
             }
             guard !busy, manager == nil else { return }
             manager = restored
+            if let configuration = restored?.protocolConfiguration as? NETunnelProviderProtocol {
+                route = ConnectionRoute.fromProviderMode(configuration.providerConfiguration?["mode"] as? String)
+                profileName = route == .vk ? "Подключение через VK" : "Сохранённый VPN-профиль"
+            }
             if let manager { consume(manager.connection.status) }
         } catch { errorMessage = "Не удалось восстановить настройки VPN." }
     }
     private func consume(_ state: NEVPNStatus) {
+        connectionState = state
         switch state {
         case .connected: status = "VPN подключён · проверьте интернет"
         case .connecting, .reasserting: status = "Подключение…"

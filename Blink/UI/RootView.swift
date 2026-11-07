@@ -1,33 +1,65 @@
 import SwiftUI
 
-private enum BlinkScreen: String, CaseIterable, Identifiable, Hashable {
-    case home = "Главная", profiles = "Серверы", vokop = "Через VK", settings = "Настройки"
-    var id: Self { self }
-    var icon: String { switch self { case .home: return "house.fill"; case .profiles: return "globe.europe.africa"; case .vokop: return "arrow.triangle.branch"; case .settings: return "slider.horizontal.3" } }
-}
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var phase
-    @EnvironmentObject private var xray: XrayVPNController
     @EnvironmentObject private var authorizer: VKPreflightAuthorizer
-    @State private var selected: BlinkScreen? = .home
+    @StateObject private var navigation = BlinkNavigation()
     var body: some View {
         Group {
             if sizeClass == .regular {
                 NavigationSplitView {
-                    List(BlinkScreen.allCases, selection: $selected) { screen in Label(screen.rawValue, systemImage: screen.icon).tag(screen) }.navigationTitle("Blink").blinkScreen().listStyle(.sidebar)
-                } detail: { NavigationStack { destination(selected ?? .home) } }
+                    List(selection: Binding<BlinkTab?>(get: { navigation.tab }, set: { if let tab = $0 { navigation.tab = tab } })) {
+                        Section {
+                            ForEach(BlinkTab.allCases) { tab in
+                                Label(tab.title, systemImage: tab.symbol).tag(tab)
+                            }
+                        } header: {
+                            Text("ВАША СЕТЬ").font(.caption2.weight(.semibold)).tracking(2)
+                        }
+                    }.navigationTitle("Blink").listStyle(.sidebar).blinkScreen()
+                } detail: {
+                    NavigationStack { destination(navigation.tab) }.id(navigation.tab)
+                }
             } else {
-                TabView {
-                    ForEach(BlinkScreen.allCases) { screen in NavigationStack { destination(screen) }.tabItem { Label(screen.rawValue, systemImage: screen.icon) } }
+                TabView(selection: $navigation.tab) {
+                    ForEach(BlinkTab.allCases) { tab in
+                        NavigationStack { destination(tab) }
+                            .tabItem { Label(tab.title, systemImage: tab.symbol) }.tag(tab)
+                    }
                 }
             }
-        }.tint(BlinkTheme.accent)
+        }
+        .environmentObject(navigation)
+        .tint(BlinkTheme.accent)
         .sheet(item: $authorizer.modern) { challenge in ModernVKCaptchaView(challenge: challenge) }
         .sheet(item: $authorizer.legacy) { challenge in LegacyVKCaptchaView(challenge: challenge) }
         .onChange(of: phase) { if $0 == .background { authorizer.cancel() } }
     }
-    @ViewBuilder private func destination(_ screen: BlinkScreen) -> some View {
-        switch screen { case .home: HomeView(); case .profiles: UniversalProfilesView(); case .vokop: SubscriptionView(); case .settings: SettingsView() }
+    @ViewBuilder private func destination(_ tab: BlinkTab) -> some View {
+        switch tab {
+        case .home: HomeView()
+        case .library: ConnectionsView()
+        case .diagnostics: DiagnosticsView()
+        case .settings: SettingsView()
+        }
+    }
+}
+
+struct ConnectionsView: View {
+    @EnvironmentObject private var navigation: BlinkNavigation
+    var body: some View {
+        Group {
+            switch navigation.route {
+            case .direct: UniversalProfilesView()
+            case .vk: SubscriptionView()
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Способ подключения", selection: $navigation.route) {
+                ForEach(ConnectionRoute.allCases) { route in Text(route.title).tag(route) }
+            }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.vertical, 12)
+                .background(.regularMaterial)
+        }
     }
 }

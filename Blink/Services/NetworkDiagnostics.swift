@@ -16,13 +16,14 @@ struct DiagnosticResult: Decodable {
 final class NetworkDiagnostics: ObservableObject {
     @Published private(set) var results: [String: String] = [:]
     @Published private(set) var busy = false
+    @Published private(set) var activeKey: String?
     func check(kind: String, direct: Bool, vpn: XrayVPNController) async {
         guard !busy else { return }
         guard !vpn.busy else { results[direct ? "direct" : kind] = "Дождитесь завершения подключения VPN."; return }
         let key = direct ? "direct" : kind
         guard direct || vpn.isConnected else { results[key] = "Сначала подключите туннель."; return }
-        busy = true; results[key] = "Проверяем…"
-        defer { busy = false }
+        busy = true; activeKey = key; results[key] = "Проверяем…"
+        defer { busy = false; activeKey = nil }
         // A physical bypass is only necessary while our VPN is active.
         // Ordinary requests use Apple's network stack, including DNS64/NAT64.
         let bypass = direct && vpn.isConnected

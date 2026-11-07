@@ -2,7 +2,7 @@ import Foundation
 import BlinkCore
 
 /// Source includes secrets; the entire array lives only in shared Keychain.
-struct UniversalProfile: Codable, Identifiable {
+struct UniversalProfile: Codable, Identifiable, Sendable {
     var id = UUID()
     var name: String
     var kind: String

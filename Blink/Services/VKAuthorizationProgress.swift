@@ -1,6 +1,6 @@
 import Foundation
 
-enum VKAuthorizationPhase {
+enum VKAuthorizationPhase: Equatable {
     case starting, captcha, verifying, transport, ready
     var message: String {
         switch self {
