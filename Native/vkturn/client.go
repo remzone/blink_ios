@@ -7,8 +7,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,9 +79,9 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	u, err := url.Parse(cfg.VKCallURL)
-	if err != nil || u.Scheme != "https" || (u.Host != "vk.com" && u.Host != "www.vk.com" && u.Host != "vk.ru" && u.Host != "www.vk.ru") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !regexp.MustCompile(`^/call/join/[A-Za-z0-9_=-]+$`).MatchString(u.Path) || u.RawPath != "" {
-		return nil, errors.New("invalid VK call URL")
+	link, err := vkCallID(cfg.VKCallURL)
+	if err != nil {
+		return nil, err
 	}
 	if cfg.TURNTransport != "" && cfg.TURNTransport != "tcp" && cfg.TURNTransport != "udp" {
 		return nil, errors.New("invalid TURN transport")
@@ -101,7 +99,7 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	nctx, ncancel := context.WithCancel(ctx)
-	c := &Client{ctx: ctx, cancel: cancel, networkCtx: nctx, networkCancel: ncancel, config: cfg, link: strings.TrimPrefix(u.Path, "/call/join/"), done: make(chan struct{}), events: make(chan string, 1), authGate: make(chan struct{}, 1), state: "connecting"}
+	c := &Client{ctx: ctx, cancel: cancel, networkCtx: nctx, networkCancel: ncancel, config: cfg, link: link, done: make(chan struct{}), events: make(chan string, 1), authGate: make(chan struct{}, 1), state: "connecting"}
 	c.authGate <- struct{}{}
 	if cfg.Bootstrap != "" {
 		c.username = bootstrap.Username

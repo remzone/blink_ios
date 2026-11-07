@@ -27,7 +27,7 @@ func validateBootstrap(raw string, cfg Config) (turnBootstrap, error) {
 	}
 	host, port, e := net.SplitHostPort(b.Address)
 	now := time.Now().Unix()
-	if e != nil || host == "" || port == "" || b.Username == "" || b.Password == "" || len(b.Username) > 4096 || len(b.Password) > 4096 || strings.ContainsAny(b.Username+b.Password, "\r\n\x00") || b.PeerHost != cfg.PeerHost || b.PeerPort != cfg.PeerPort || b.CallURL != cfg.VKCallURL || b.ExpiresAt <= now || b.ExpiresAt > now+90 {
+	if e != nil || host == "" || port == "" || b.Username == "" || b.Password == "" || len(b.Username) > 4096 || len(b.Password) > 4096 || strings.ContainsAny(b.Username+b.Password, "\r\n\x00") || b.PeerHost != cfg.PeerHost || b.PeerPort != cfg.PeerPort || !sameVKCall(b.CallURL, cfg.VKCallURL) || b.ExpiresAt <= now || b.ExpiresAt > now+90 {
 		return b, errors.New("expired or mismatched TURN handoff")
 	}
 	return b, nil
