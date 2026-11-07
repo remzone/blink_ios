@@ -24,10 +24,12 @@ struct VokopSubscription: Decodable {
 
     func validate(now: Date = Date(), minimumRevision: Int64 = 0) throws {
         let timestamp = Int64(now.timeIntervalSince1970)
+        guard expires_at > timestamp else { throw SubscriptionError.expired }
+        guard issued_at <= timestamp + 300 else { throw SubscriptionError.futureDocument }
+        guard revision >= minimumRevision else { throw SubscriptionError.outdatedRevision }
         guard schema == "vokop.subscription.v1", revision > 0,
-              revision <= 9_007_199_254_740_991, revision >= minimumRevision,
-              issued_at >= 0, issued_at <= timestamp + 300,
-              expires_at > timestamp, expires_at > issued_at,
+              revision <= 9_007_199_254_740_991,
+              issued_at >= 0, expires_at > issued_at,
               expires_at - issued_at <= 2_678_400,
               (1...16).contains(profiles.count),
               Set(profiles.map(\.id)).count == profiles.count else {
@@ -40,10 +42,12 @@ struct VokopSubscription: Decodable {
                   Self.matches(profile.vless.uuid, "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"),
                   Self.validPeerHost(profile.turn.peer_host),
                   (1...65535).contains(profile.turn.peer_port),
-                  (1...16).contains(profile.turn.streams),
-                  profile.turn.vk_call_url.utf8.count <= 2048,
-                  Self.matches(profile.turn.vk_call_url, "^https://(www\\.)?vk\\.com/call/join/[A-Za-z0-9_=-]+$") else {
+                  (1...16).contains(profile.turn.streams) else {
                 throw SubscriptionError.invalidDocument
+            }
+            guard profile.turn.vk_call_url.utf8.count <= 2048,
+                  Self.matches(profile.turn.vk_call_url, "^https://(www\\.)?vk\\.(com|ru)/call/join/[A-Za-z0-9_=-]+$") else {
+                throw SubscriptionError.invalidCallURL
             }
         }
     }
@@ -74,10 +78,15 @@ struct VokopSubscription: Decodable {
 
 enum SubscriptionError: LocalizedError {
     case invalidURL, invalidDocument, responseTooLarge, accessDenied, requestFailed
+    case expired, futureDocument, outdatedRevision, invalidCallURL
     var errorDescription: String? {
         switch self {
         case .invalidURL: return "Use the full HTTPS subscription link supplied by your administrator."
-        case .invalidDocument: return "Subscription is invalid, expired, or older than the last loaded revision."
+        case .invalidDocument: return "Формат подписки не поддерживается или параметры серверов некорректны. Обратитесь к администратору."
+        case .expired: return "Срок подписки истёк. Проверьте дату и время устройства, затем обновите подписку."
+        case .futureDocument: return "Дата выдачи подписки находится в будущем. Проверьте автоматическую настройку даты и времени устройства."
+        case .outdatedRevision: return "Сервер вернул более старую версию подписки, чем уже сохранена. Обратитесь к администратору."
+        case .invalidCallURL: return "В подписке некорректная ссылка звонка VK. Поддерживаются HTTPS-ссылки vk.com и vk.ru вида /call/join/… ."
         case .responseTooLarge: return "Subscription exceeds the size limit."
         case .accessDenied: return "Subscription access denied. Check your subscription with the administrator."
         case .requestFailed: return "Could not load the subscription securely. Check the link and network."

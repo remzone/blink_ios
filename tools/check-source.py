@@ -65,6 +65,28 @@ check_subscription_contract(
 )
 print('PASS subscription view/model/client API names (targeted static guard, not Swift type checking)')
 
+# Execute the literal Swift regex as a narrow source contract check. This is
+# not Swift execution: it catches panel/client domain drift on the Linux host.
+model = (root / 'Blink/Models/VokopSubscription.swift').read_text()
+call_literal = re.search(r'Self.matches\(profile.turn.vk_call_url, "([^"\n]+)"\)', model)
+assert call_literal, 'VK call URL validation pattern missing'
+call_pattern = re.compile(json.loads('"' + call_literal.group(1) + '"'))
+for host in ['vk.com', 'www.vk.com', 'vk.ru', 'www.vk.ru']:
+    assert call_pattern.fullmatch('https://' + host + '/call/join/TEST_ONLY'), host
+for value in ['https://vk.ru.evil.example/call/join/TEST_ONLY',
+              'https://evilvk.com/call/join/TEST_ONLY',
+              'http://vk.ru/call/join/TEST_ONLY',
+              'https://vk.ru:443/call/join/TEST_ONLY',
+              'https://user@vk.ru/call/join/TEST_ONLY',
+              'https://vk.ru/call/join/TEST_ONLY?extra=1',
+              'https://vk.ru/call/join/TEST_ONLY#extra',
+              'https://vk.ru/call/join/TEST%2FONLY',
+              'https://vk.ru/call/join/TEST_ONLY/extra',
+              'https://vk.ru/call/join/TEST_ONLY\n']:
+    assert not call_pattern.fullmatch(value), 'Malformed VK call accepted by source pattern'
+print('PASS VK call URL source pattern: vk.com/vk.ru and exact secure paths (not Swift execution)')
+
+
 print('PASS standard subscription fixture encoding and secure HTTP source guards (not Swift execution)')
 print('PASS canonical panel subscription fixture matches Swift test fixture')
 print('PASS static project/workflow/entitlement/public packetFlow guards (not Swift type checking)')

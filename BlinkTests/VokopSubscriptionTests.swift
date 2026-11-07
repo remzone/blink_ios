@@ -22,6 +22,42 @@ final class VokopSubscriptionTests: XCTestCase {
             XCTAssertThrowsError(try decode(fixture.replacingOccurrences(of: original, with: replacement)).validate(now: now))
         }
     }
+    func testBothOfficialVKCallDomainsAreAccepted() throws {
+        for host in ["vk.com", "www.vk.com", "vk.ru", "www.vk.ru"] {
+            let document = fixture.replacingOccurrences(of: "https://vk.com", with: "https://\(host)")
+            XCTAssertNoThrow(try decode(document).validate(now: now), host)
+        }
+    }
+    func testDeceptiveAndMalformedVKCallURLsAreRejected() throws {
+        let original = "https://vk.com/call/join/DEMO_TOKEN"
+        for value in ["https://vk.ru.evil.example/call/join/DEMO_TOKEN",
+                      "https://vk.com.evil.example/call/join/DEMO_TOKEN",
+                      "https://evilvk.ru/call/join/DEMO_TOKEN",
+                      "http://vk.ru/call/join/DEMO_TOKEN",
+                      "https://vk.ru:443/call/join/DEMO_TOKEN",
+                      "https://user@vk.ru/call/join/DEMO_TOKEN",
+                      "https://vk.ru/call/join/DEMO_TOKEN?extra=1",
+                      "https://vk.ru/call/join/DEMO_TOKEN#fragment",
+                      "https://vk.ru/call/join/DEMO%2FTOKEN",
+                      "https://vk.ru/call/join/DEMO_TOKEN/extra"] {
+            XCTAssertThrowsError(try decode(fixture.replacingOccurrences(of: original, with: value)).validate(now: now)) { error in
+                guard case SubscriptionError.invalidCallURL = error else {
+                    return XCTFail("Expected a specific VK call URL error")
+                }
+            }
+        }
+    }
+    func testExpiryClockAndRollbackHaveSpecificMessages() throws {
+        XCTAssertThrowsError(try decode(fixture).validate(now: Date(timeIntervalSince1970: 1_793_303_600))) { error in
+            guard case SubscriptionError.expired = error else { return XCTFail("Expected expiry error") }
+        }
+        XCTAssertThrowsError(try decode(fixture).validate(now: Date(timeIntervalSince1970: 1_793_299_000))) { error in
+            guard case SubscriptionError.futureDocument = error else { return XCTFail("Expected clock error") }
+        }
+        XCTAssertThrowsError(try decode(fixture).validate(now: now, minimumRevision: 2)) { error in
+            guard case SubscriptionError.outdatedRevision = error else { return XCTFail("Expected rollback error") }
+        }
+    }
     func testFeedURLRequiresExactSecureTokenPath() throws {
         let token = String(repeating: "a", count: 43)
         let good = "https://panel.example/base/api/vokop/v1/subscriptions/\(token)"
