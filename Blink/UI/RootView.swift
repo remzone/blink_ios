@@ -23,7 +23,8 @@ struct RootView: View {
                 }
             }
         }.tint(BlinkTheme.accent)
-        .sheet(item: $authorizer.legacy, onDismiss: { authorizer.cancelLegacy() }) { challenge in LegacyVKCaptchaView(challenge: challenge) }
+        .sheet(item: $authorizer.modern) { challenge in ModernVKCaptchaView(challenge: challenge) }
+        .sheet(item: $authorizer.legacy) { challenge in LegacyVKCaptchaView(challenge: challenge) }
         .onChange(of: phase) { if $0 == .background { authorizer.cancel() } }
     }
     @ViewBuilder private func destination(_ screen: BlinkScreen) -> some View {

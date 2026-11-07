@@ -27,6 +27,6 @@ struct LegacyVKCaptchaView: View {
                 var data = Data(); for try await byte in bytes { guard data.count < 1_048_576 else { return }; data.append(byte) }
                 image = UIImage(data: data)
             } catch { }
-        }.onDisappear { code = "" }
+        }.onDisappear { code = ""; authorizer.cancelChallenge(challenge.id) }
     }
 }

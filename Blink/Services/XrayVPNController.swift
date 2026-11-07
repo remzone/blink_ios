@@ -76,12 +76,22 @@ final class XrayVPNController: ObservableObject {
             manager = existing
             var value = VKProfile(uuid: profile.vless.uuid, peerHost: profile.turn.peer_host, peerPort: profile.turn.peer_port, vkCallURL: profile.turn.vk_call_url, streams: profile.turn.streams, expiresAt: expiresAt, dnsServer: dnsServer, turnTransport: transport)
             let data = try JSONEncoder().encode(value)
-            value.bootstrap = try await authorization.authorize(String(decoding: data, as: UTF8.self))
+            value.bootstrap = try await authorization.authorize(String(decoding: data, as: UTF8.self)) { [weak self] phase in
+                guard let self, self.operation == id else { return }
+                self.status = phase.message
+            }
             guard operation == id else { return }; busy = false
             profileName = profile.name
             let prepared = try JSONEncoder().encode(value)
             await connect(json: String(decoding: prepared, as: UTF8.self), mode: "vkturn", server: profile.turn.peer_host, secrets: secrets)
-        } catch { if operation == id { busy = false; status = "Не подключён"; errorMessage = "Авторизация VK отменена, истекла или не завершилась. Повторите подключение." } }
+        } catch {
+            guard operation == id else { return }
+            busy = false; status = "Не подключён"
+            if error is CancellationError { errorMessage = "Авторизация VK отменена. Повторите подключение." }
+            else if let error = error as? VKAuthorizationError { errorMessage = error.localizedDescription }
+            else if let error = error as? NetworkRequestError { errorMessage = error.localizedDescription }
+            else { errorMessage = "Не удалось подготовить авторизацию VK. Повторите подключение." }
+        }
     }
 
     private func connect(json: String, mode: String, server: String, captureAll: Bool = true, secrets: SecretStore) async {
