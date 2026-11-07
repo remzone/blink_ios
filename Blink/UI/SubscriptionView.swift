@@ -12,7 +12,7 @@ struct SubscriptionView: View {
     @State private var loading = false
     @State private var task: Task<Void, Never>?
     @State private var lastURL = ""
-    @State private var highestВерсия: Int64 = 0
+    @State private var highestRevision: Int64 = 0
     @State private var requestID = UUID()
     private let credentialID = UUID(uuidString: "57f8b06a-c211-4b4f-8525-14cb2e7a882e")!
 
@@ -71,10 +71,10 @@ struct SubscriptionView: View {
             do {
                 let saved = try container.secretStore.read(profileID: credentialID, kind: .subscriptionURL) ?? ""
                 if let state = try? JSONDecoder().decode(SavedVokopSubscription.self, from: Data(saved.utf8)) {
-                    link = state.url; lastURL = state.url; highestВерсия = state.highestВерсия
+                    link = state.url; lastURL = state.url; highestRevision = state.highestRevision
                 } else {
                     // One-time compatibility with the earlier URL-only Keychain value.
-                    link = saved; lastURL = saved; highestВерсия = 0
+                    link = saved; lastURL = saved; highestRevision = 0
                 }
             }
             catch { message = "Не удалось прочитать сохранённую подписку." }
@@ -89,19 +89,19 @@ struct SubscriptionView: View {
         task?.cancel()
         let id = UUID(); requestID = id
         let requestedURL = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        let minimumВерсия = requestedURL == lastURL ? highestВерсия : 0
+        let minimumRevision = requestedURL == lastURL ? highestRevision : 0
         document = nil; message = nil; loading = true
         task = Task { @MainActor in
             defer { if requestID == id { loading = false } }
             do {
                 _ = try VokopSubscriptionClient.validatedURL(requestedURL)
-                let result = try await VokopSubscriptionClient().fetch(requestedURL, minimumВерсия: minimumВерсия)
+                let result = try await VokopSubscriptionClient().fetch(requestedURL, minimumRevision: minimumRevision)
                 try Task.checkCancellation()
                 guard requestID == id else { return }
-                let state = SavedVokopSubscription(url: requestedURL, highestВерсия: result.revision)
+                let state = SavedVokopSubscription(url: requestedURL, highestRevision: result.revision)
                 let encoded = String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
                 try container.secretStore.save(encoded, profileID: credentialID, kind: .subscriptionURL)
-                document = result; lastURL = requestedURL; link = requestedURL; highestВерсия = result.revision
+                document = result; lastURL = requestedURL; link = requestedURL; highestRevision = result.revision
             } catch is CancellationError {
                 // Dismissal/Forget must not repopulate a cleared screen.
             } catch let error as SubscriptionError {
@@ -114,7 +114,7 @@ struct SubscriptionView: View {
 
     private func forget() {
         requestID = UUID(); task?.cancel(); task = nil
-        document = nil; lastURL = ""; highestВерсия = 0; link = ""; loading = false
+        document = nil; lastURL = ""; highestRevision = 0; link = ""; loading = false
         do {
             try container.secretStore.delete(profileID: credentialID)
             message = "Подписка удалена."

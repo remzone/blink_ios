@@ -42,6 +42,29 @@ assert expected['supported'] == 2 and expected['rejected'] == 2
 transport = (root / 'Blink/Services/SecureSubscriptionHTTP.swift').read_text()
 for guard in ['URLSessionConfiguration.ephemeral', 'configuration.urlCredentialStorage = nil', 'completionHandler(nil)', 'data.count < Self.maximumBytes']:
     assert guard in transport, guard
+def check_subscription_contract(view, model, client):
+    """Narrow cross-file API guard, not general Swift name/type checking."""
+    stored = re.search(r'struct SavedVokopSubscription[^{}]*\{([^{}]*)\}', model)
+    assert stored, 'SavedVokopSubscription declaration missing'
+    fields = set(re.findall(r'\blet\s+(\w+)\s*:', stored.group(1)))
+    members = set(re.findall(r'\bstate\.(\w+)', view))
+    assert members <= fields, f'SubscriptionView references unknown saved members: {members - fields}'
+    for initializer in re.findall(r'SavedVokopSubscription\(([^()]*?)\)', view):
+        labels = set(re.findall(r'\b(\w+)\s*:', initializer))
+        assert labels == fields, f'Saved subscription initializer labels differ: {labels} vs {fields}'
+    signature = re.search(r'func fetch\(([^()]*)\)', client)
+    assert signature, 'VokopSubscriptionClient.fetch declaration missing'
+    parameters = set(re.findall(r'\b(\w+)\s*:', signature.group(1)))
+    for label in re.findall(r'VokopSubscriptionClient\(\)\.fetch\([^,\n]+,\s*(\w+)\s*:', view):
+        assert label in parameters, f'Unknown subscription fetch argument: {label}'
+
+check_subscription_contract(
+    (root / 'Blink/UI/SubscriptionView.swift').read_text(),
+    (root / 'Blink/Models/VokopSubscription.swift').read_text(),
+    (root / 'Blink/Services/VokopSubscriptionClient.swift').read_text(),
+)
+print('PASS subscription view/model/client API names (targeted static guard, not Swift type checking)')
+
 print('PASS standard subscription fixture encoding and secure HTTP source guards (not Swift execution)')
 print('PASS canonical panel subscription fixture matches Swift test fixture')
 print('PASS static project/workflow/entitlement/public packetFlow guards (not Swift type checking)')
