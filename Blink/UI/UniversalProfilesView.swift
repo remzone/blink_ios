@@ -193,7 +193,19 @@ struct UniversalProfilesView: View {
     private func importText(_ source: String) {
         guard !importing else { return }; importing = true; message = nil; let id = UUID(); importID = id
         importTask = Task { @MainActor in
-            defer { if importID == id { importing = false } }
+            // Import outcome complements the HTTP result; all fields are numeric.
+            var stage: Int64 = 1
+            var importedCount: Int64 = 0
+            var rejectedCount: Int64 = 0
+            var responseBytes: Int64 = 0
+            defer {
+                if importID == id { importing = false }
+                DiagnosticCenter.shared.record("subscription.result", fields: [
+                    "stage": stage, "state": stage == 4 ? 1 : 0,
+                    "count": importedCount, "inputErrors": rejectedCount,
+                    "rxBytes": responseBytes, "reason": Task.isCancelled ? 1 : 0
+                ])
+            }
             do {
                 let text: String
                 let subscriptionURL: String?
@@ -206,6 +218,8 @@ struct UniversalProfilesView: View {
                 case .configuration(let value):
                     subscriptionURL = nil; text = value
                 }
+                responseBytes = Int64(text.utf8.count)
+                stage = 2
                 try Task.checkCancellation()
                 guard importID == id else { return }
                 var (added, rejected, notice) = try await Task.detached(priority: .userInitiated) {
@@ -214,12 +228,14 @@ struct UniversalProfilesView: View {
                 }.value
                 try Task.checkCancellation()
                 guard importID == id else { return }
+                stage = 3; importedCount = Int64(added.count); rejectedCount = Int64(rejected)
                 if let url = subscriptionURL { for i in added.indices { added[i].subscriptionURL = url } }
                 let retained = subscriptionURL.map { url in profiles.filter { $0.subscriptionURL != url } } ?? profiles
                 guard retained.count + added.count <= 1024 else { throw UniversalProfileError.invalid }
                 let next = retained + added; let data = try JSONEncoder().encode(next)
                 guard data.count <= 4194304 else { throw UniversalProfileError.invalid }
                 try container.secretStore.save(String(decoding: data, as: UTF8.self), profileID: vaultID, kind: .universalProfiles)
+                stage = 4
                 profiles = next; input = ""; importPresented = false; message = "Добавлено: \(added.count). Отклонено: \(rejected). \(notice)"
             } catch is CancellationError { }
             catch let error as ProfileImportInputError { if importID == id { message = error.localizedDescription } }

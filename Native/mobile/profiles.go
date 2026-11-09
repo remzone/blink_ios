@@ -174,6 +174,7 @@ func ImportProfiles(source string) (string, error) {
 	if len(lines) > 1024 {
 		return "", errors.New("too many subscription nodes")
 	}
+	providerHints := false
 	profiles := []ImportedProfile{}
 	rejected := []map[string]any{}
 	for i, line := range lines {
@@ -185,6 +186,10 @@ func ImportProfiles(source string) (string, error) {
 		if e != nil {
 			rejected = append(rejected, map[string]any{"index": i + 1, "reason": e.Error()})
 		} else {
+			if u, err := url.Parse(line); err == nil {
+				q := u.Query()
+				providerHints = providerHints || q.Has("x-durev-block") || q.Has("x-durev-prio") || q.Has("x-durev-sni-change") || (q.Has("concurrency") && !q.Has("mux"))
+			}
 			profiles = append(profiles, p)
 		}
 	}
@@ -194,6 +199,9 @@ func ImportProfiles(source string) (string, error) {
 	b, e := json.Marshal(map[string]any{"profiles": profiles, "rejected": rejected, "notice": func() string {
 		if clash {
 			return "Импортированы узлы Clash. Группы, правила и DNS документа не применяются; для сохранения маршрутизации используйте Xray JSON."
+		}
+		if providerHints {
+			return "Импортированы параметры подключения. Метки группировки провайдера, автоматическая замена SNI и concurrency без явного mux не применяются."
 		}
 		return ""
 	}()})

@@ -7,7 +7,7 @@ import (
 )
 
 // RTT and RTO come from KCP acknowledgements, not from an HTTPS/IP probe.
-// count is the process-wide retransmitted segment counter, never packet content.
+// SNMP counters are process-wide; compare deltas between samples, never packet content.
 func startTransportMetrics(ctx context.Context, session *kcp.UDPSession, mode int64) func() {
 	child, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -23,9 +23,13 @@ func startTransportMetrics(ctx context.Context, session *kcp.UDPSession, mode in
 			case <-timer.C:
 				ticks++
 				if ticks <= 20 || ticks%5 == 0 {
+					snapshot := kcp.DefaultSnmp.Copy()
 					RecordDiagnostic("native.vk.transport", map[string]int64{
 						"mode": mode, "rttMs": int64(session.GetSRTT()), "rtoMs": int64(session.GetRTO()),
-						"count": int64(kcp.DefaultSnmp.Copy().RetransSegs),
+						"count":        int64(snapshot.RetransSegs),
+						"inputPackets": int64(snapshot.InPkts), "outputPackets": int64(snapshot.OutPkts),
+						"rxBytes": int64(snapshot.InBytes), "txBytes": int64(snapshot.OutBytes),
+						"inputErrors": int64(snapshot.InErrs + snapshot.InCsumErrors + snapshot.KCPInErrors),
 					})
 				}
 			}

@@ -68,7 +68,7 @@ func ParseSingle(source string) (out *conf.OutboundDetourConfig, err error) {
 		return nil, errors.New("path must be a query parameter")
 	}
 	allowed := map[string]bool{}
-	for _, k := range strings.Fields("type security encryption sni fp pbk sid pqv spx ech pcs vcn alpn flow host path mode headerType mtu tti authority serviceName obfs obfs-password mport ports hop-interval up down insecure allowInsecure extra fm cs support-x25519mlkem768 seed plugin x_padding_bytes") {
+	for _, k := range strings.Fields("type security encryption sni fp pbk sid pqv spx ech pcs vcn alpn flow host path mode headerType mtu tti authority serviceName obfs obfs-password mport ports hop-interval up down insecure allowInsecure extra fm cs support-x25519mlkem768 seed plugin x_padding_bytes mux muxConcurrency concurrency x-durev-block x-durev-prio x-durev-sni-change") {
 		allowed[k] = true
 	}
 	q, e := url.ParseQuery(u.RawQuery)
@@ -181,10 +181,48 @@ func ParseSingle(source string) (out *conf.OutboundDetourConfig, err error) {
 		u.RawQuery = q.Encode()
 		source = u.String()
 	}
+	// Provider labels describe grouping/ordering; they never alter TLS or SNI.
+	// concurrency alone is a client tuning hint, not permission to enable Mux.
+	var mux *conf.MuxConfig
+	if q.Has("mux") || q.Has("muxConcurrency") || q.Has("concurrency") {
+		if u.Scheme != "vless" && u.Scheme != "vmess" && u.Scheme != "trojan" {
+			return nil, errors.New("irrelevant mux option")
+		}
+		enabled := false
+		if q.Has("mux") {
+			if q.Get("mux") != "true" && q.Get("mux") != "false" && q.Get("mux") != "1" && q.Get("mux") != "0" {
+				return nil, errors.New("invalid mux flag")
+			}
+			enabled = q.Get("mux") == "true" || q.Get("mux") == "1"
+		}
+		if q.Has("muxConcurrency") && !q.Has("mux") {
+			return nil, errors.New("mux concurrency without mux flag")
+		}
+		if q.Has("concurrency") && !q.Has("mux") && effective != "xhttp" && effective != "splithttp" {
+			return nil, errors.New("ambiguous concurrency option")
+		}
+		concurrency := 8
+		for _, key := range []string{"concurrency", "muxConcurrency"} {
+			if q.Has(key) {
+				n, e := strconv.Atoi(q.Get(key))
+				if e != nil || n < 1 || n > 128 {
+					return nil, errors.New("invalid mux concurrency")
+				}
+				concurrency = n
+			}
+		}
+		if q.Has("concurrency") && q.Has("muxConcurrency") && q.Get("concurrency") != q.Get("muxConcurrency") {
+			return nil, errors.New("conflicting mux concurrency")
+		}
+		if q.Has("mux") {
+			mux = &conf.MuxConfig{Enabled: enabled, Concurrency: int16(concurrency)}
+		}
+	}
 	out, err = parseOutboundShareLink(source)
 	if err != nil {
 		return nil, err
 	}
+	out.MuxSettings = mux
 	if out.StreamSetting == nil && u.Scheme == "trojan" {
 		out.StreamSetting = &conf.StreamConfig{Security: "tls", TLSSettings: &conf.TLSConfig{ServerName: u.Hostname()}}
 	}
