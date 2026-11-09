@@ -15,6 +15,10 @@ import (
 )
 
 type VKProfile struct {
+	Backend       string        `json:"backend"`
+	Protocol      string        `json:"protocol"`
+	WrapKey       string        `json:"wrapKey"`
+	WireGuard     string        `json:"wireguard"`
 	TURNServer    string        `json:"turnServer"`
 	Tuning        vkturn.Tuning `json:"tuning"`
 	Bootstrap     string        `json:"bootstrap,omitempty"`
@@ -33,7 +37,7 @@ type VKProfile struct {
 // StartVK uses the same KCP/smux/TURN wire protocol as the pinned server.
 // Engine start is not evidence of transport readiness; inspect Status.
 func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engine, error) {
-	if len(profileJSON) > 16384 || sink == nil || protector == nil {
+	if len(profileJSON) > 65536 || sink == nil || protector == nil {
 		return nil, errors.New("invalid VK profile")
 	}
 	var p VKProfile
@@ -52,7 +56,27 @@ func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engin
 	if !validUUID(p.UUID) || p.ExpiresAt <= now || p.ExpiresAt > now+2678400 {
 		return nil, errors.New("invalid or expired subscription")
 	}
-	transport, err := vkturn.Start(context.Background(), vkturn.Config{TURNServer: p.TURNServer, Tuning: p.Tuning, Bootstrap: p.Bootstrap, PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct", ManualCaptcha: p.ManualCaptcha, TURNTransport: p.TURNTransport}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
+	if p.Backend == "" {
+		p.Backend = "vless"
+	}
+	if p.Protocol == "" {
+		p.Protocol = "kcp"
+	}
+	if p.Backend == "vless" {
+		if p.Protocol != "kcp" || p.WireGuard != "" {
+			return nil, errors.New("VLESS requires KCP/smux")
+		}
+	} else if p.Backend == "wireguard" {
+		if p.Protocol != "dtls" && p.Protocol != "srtp" && p.Protocol != "wrap" {
+			return nil, errors.New("unsupported WireGuard transport")
+		}
+		if _, err := vkWireGuardConfig(p.WireGuard, "127.0.0.1:1"); err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, errors.New("unsupported VK payload backend")
+	}
+	transport, err := vkturn.Start(context.Background(), vkturn.Config{Protocol: p.Protocol, WrapKey: p.WrapKey, TURNServer: p.TURNServer, Tuning: p.Tuning, Bootstrap: p.Bootstrap, PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct", ManualCaptcha: p.ManualCaptcha, TURNTransport: p.TURNTransport}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
 	if err != nil {
 		return nil, errors.New("VK transport initialization failed")
 	}
@@ -67,7 +91,17 @@ func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engin
 		return nil, errors.New("invalid local transport port")
 	}
 	raw, _ := json.Marshal(Connection{Address: host, Port: port, UUID: p.UUID, Network: "tcp", Security: "none"})
-	e, err := Start(string(raw), sink, protector)
+	var e *Engine
+	if p.Backend == "wireguard" {
+		profile, parseErr := vkWireGuardConfig(p.WireGuard, transport.Addr())
+		if parseErr != nil {
+			_ = transport.Close()
+			return nil, parseErr
+		}
+		e, err = startWireGuard(profile, sink, protector)
+	} else {
+		e, err = Start(string(raw), sink, protector)
+	}
 	if err != nil {
 		_ = transport.Close()
 		return nil, err

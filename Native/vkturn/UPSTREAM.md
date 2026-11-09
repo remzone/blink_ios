@@ -87,3 +87,16 @@ The combined dependency graph may select newer Pion modules due to Xray;
 wire-level integration with the server still needs an authorized device/stage
 validation. iOS underlying-interface binding is supplied by the owner through
 protector; changing physical networks requires closing/restarting the client.
+
+WG datagram transports: DTLS-SRTP adapter and rtpopus codec are adapted from
+anton48/vk-turn-proxy-ios@a41bd5628a8bdbdc6ff7e3d794fb76d97ea08871
+(`pkg/proxy/srtpwrap/srtp.go`, `pkg/proxy/wrap.go`). Original file notices are
+preserved. Compatible peer: anton48/vk-turn-proxy srtp-build478,
+commit f954cb04ac17f49059f6fe5630a09428ff04c242. Group hello is 0xffGRP plus
+one random 16-byte session ID shared by this client's allocations.
+Only DTLS, SRTP and rtpopus WRAP carry WG here; other forks are rejected.
+WG packets never go through KCP/smux. Local datagram queue is bounded.
+See panel docs/vokop/connection-modes.md for server tuning and compatibility.
+
+Blink bounds the SRTP receive queue to 64 datagrams instead of upstream's 4096,
+limiting extension memory and stale packet backlog under backpressure.

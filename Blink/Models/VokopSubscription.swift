@@ -11,15 +11,33 @@ struct VokopSubscription: Decodable {
     struct Profile: Decodable, Identifiable {
         let id: String
         let name: String
+        let backend: String?
+        let wireguard: String?
+        var backendTitle: String { backend == "wireguard" ? "WireGuard · \((turn.protocolName ?? "dtls").uppercased())" : "VLESS · KCP" }
         let vless: VLESS
         let turn: TURN
     }
     struct VLESS: Decodable { let uuid: String }
     struct TURN: Decodable {
+        let protocolName: String?
+        let wrap_key: String?
+        let options: ServerOptions?
+        enum CodingKeys: String, CodingKey { case protocolName = "protocol", wrap_key, options, peer_host, peer_port, vk_call_url, streams }
         let peer_host: String
         let peer_port: Int
         let vk_call_url: String
         let streams: Int
+    }
+
+    struct ServerOptions: Decodable {
+        let transport: String?; let preset: String?; let dns: String?; let relay: String?
+        let mtu: Int?; let pace: Int?; let window: Int?; let interval: Int?; let congestion: Bool?
+        func resolved() -> VKConnectionOptions {
+            var o = VKConnectionOptions()
+            o.transport = transport ?? "auto"; o.preset = preset ?? "compatibility"; o.bootstrapDNS = dns ?? "1.1.1.1"; o.turnServer = relay ?? ""
+            o.mtu = mtu ?? 1200; o.paceKiB = pace ?? 0; o.window = window ?? 64; o.intervalMs = interval ?? 20; o.congestion = congestion ?? true; o.connections = 0
+            return o
+        }
     }
 
     func validate(now: Date = Date(), minimumRevision: Int64 = 0) throws {
@@ -27,7 +45,7 @@ struct VokopSubscription: Decodable {
         guard expires_at > timestamp else { throw SubscriptionError.expired }
         guard issued_at <= timestamp + 300 else { throw SubscriptionError.futureDocument }
         guard revision >= minimumRevision else { throw SubscriptionError.outdatedRevision }
-        guard schema == "vokop.subscription.v1", revision > 0,
+        guard ["vokop.subscription.v1", "vokop.subscription.v2"].contains(schema), revision > 0,
               revision <= 9_007_199_254_740_991,
               issued_at >= 0, expires_at > issued_at,
               expires_at - issued_at <= 2_678_400,
@@ -36,6 +54,12 @@ struct VokopSubscription: Decodable {
             throw SubscriptionError.invalidDocument
         }
         for profile in profiles {
+            let backend = profile.backend ?? "vless", wire = profile.turn.protocolName ?? "kcp"
+            guard ["vless", "wireguard"].contains(backend), (backend != "wireguard" || schema == "vokop.subscription.v2"),
+                  (backend == "vless" ? wire == "kcp" && profile.wireguard == nil : ["dtls", "srtp", "wrap"].contains(wire) && !(profile.wireguard ?? "").isEmpty && (profile.wireguard?.utf8.count ?? 0) <= 16384),
+                  (wire == "wrap" ? Self.matches(profile.turn.wrap_key ?? "", "^[A-Fa-f0-9]{64}$") : (profile.turn.wrap_key ?? "").isEmpty),
+                  profile.turn.options?.resolved().isValid ?? true else { throw SubscriptionError.invalidDocument }
+
             guard Self.matches(profile.id, "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"),
                   profile.name.unicodeScalars.count <= 100,
                   !profile.name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),

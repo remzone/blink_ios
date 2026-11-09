@@ -6,9 +6,13 @@ package vkturn
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"github.com/remzone/blink_ios/native/vkturn/srtpwrap"
+	"github.com/remzone/blink_ios/native/vkturn/wrap"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/pion/dtls/v3"
@@ -51,6 +55,48 @@ func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDP
 }
 
 func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAddr, user, pass, raw, network string) (*smux.Session, func(), error) {
+
+	media, release, err := c.createTURNPacketSession(ctx, peer, user, pass, raw, network)
+	if err != nil {
+		return nil, nil, err
+	}
+	closers := []func(){release}
+	var once sync.Once
+	cleanup := func() {
+		once.Do(func() {
+			for i := len(closers) - 1; i >= 0; i-- {
+				closers[i]()
+			}
+		})
+	}
+	success := false
+	defer func() {
+		if !success {
+			cleanup()
+		}
+	}()
+	kcp, err := tcputil.NewKCPOverDTLS(media, false)
+	if err != nil {
+		return nil, nil, errors.New("KCP creation failed")
+	}
+	closers = append(closers, func() { _ = kcp.Close() })
+	c.config.Tuning.apply(kcp)
+	session, err := smux.Client(kcp, tcputil.DefaultSmuxConfig())
+	if err != nil {
+		return nil, nil, errors.New("smux creation failed")
+	}
+	closers = append(closers, func() { _ = session.Close() })
+	mode := int64(1)
+	if network == "tcp" {
+		mode = 2
+	}
+	closers = append(closers, startTransportMetrics(ctx, kcp, mode))
+	diagnosticStage("native.vk.smux_ready", 6)
+	success = true
+	return session, cleanup, nil
+}
+
+func (c *Client) createTURNPacketSession(ctx context.Context, peer *net.UDPAddr, user, pass, raw, network string) (net.Conn, func(), error) {
 	diagnosticStage("native.vk.turn_resolve", 1)
 	address, err := c.resolveTURN(ctx, raw)
 	if err != nil {
@@ -67,10 +113,14 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 	// interrupts pending transactions and all DTLS reads on cancellation.
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	closers := []func(){func() { stopClose(); _ = conn.Close() }}
+	var cleanOnce sync.Once
 	cleanup := func() {
-		for i := len(closers) - 1; i >= 0; i-- {
-			closers[i]()
-		}
+		cleanOnce.Do(func() {
+			_ = conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
+			for i := len(closers) - 1; i >= 0; i-- {
+				closers[i]()
+			}
+		})
 	}
 	success := false
 	defer func() {
@@ -109,11 +159,30 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 	}
 	diagnosticStage("native.vk.turn_allocated", 3)
 	closers = append(closers, func() { _ = relay.Close() })
+	if c.config.Protocol == "srtp" {
+		hs, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		media, e := srtpwrap.Client(hs, &relayPacketConn{relay: relay, peer: peer}, peer, nil)
+		if e != nil {
+			return nil, nil, errors.New("SRTP handshake failed")
+		}
+		closers = append(closers, func() { _ = media.Close() })
+		success = true
+		return c.config.Tuning.paced(ctx, &boundedMediaConn{Conn: media, physical: conn}), cleanup, nil
+	}
+	var packets net.PacketConn = &relayPacketConn{relay: relay, peer: peer}
+	if c.config.Protocol == "wrap" {
+		key, _ := hex.DecodeString(c.config.WrapKey)
+		packets, err = wrap.PacketConn(packets, key, false)
+		if err != nil {
+			return nil, nil, errors.New("invalid wrap key")
+		}
+	}
 	cert, err := selfsign.GenerateSelfSigned()
 	if err != nil {
 		return nil, nil, errors.New("DTLS certificate generation failed")
 	}
-	dtlsConn, err := dtls.ClientWithOptions(&relayPacketConn{relay: relay, peer: peer}, peer,
+	dtlsConn, err := dtls.ClientWithOptions(packets, peer,
 		dtls.WithCertificates(cert), dtls.WithInsecureSkipVerify(true),
 		dtls.WithExtendedMasterSecret(dtls.RequireExtendedMasterSecret),
 		dtls.WithCipherSuites(dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256),
@@ -138,25 +207,10 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 		return nil, nil, errors.New("DTLS handshake failed")
 	}
 	diagnosticStage("native.vk.dtls_ready", 5)
-	kcp, err := tcputil.NewKCPOverDTLS(c.config.Tuning.paced(ctx, dtlsConn), false)
-	if err != nil {
-		return nil, nil, errors.New("KCP creation failed")
-	}
-	closers = append(closers, func() { _ = kcp.Close() })
-	c.config.Tuning.apply(kcp)
-	session, err := smux.Client(kcp, tcputil.DefaultSmuxConfig())
-	if err != nil {
-		return nil, nil, errors.New("smux creation failed")
-	}
-	closers = append(closers, func() { _ = session.Close() })
-	mode := int64(1)
-	if network == "tcp" {
-		mode = 2
-	}
-	closers = append(closers, startTransportMetrics(ctx, kcp, mode))
-	diagnosticStage("native.vk.smux_ready", 6)
+
 	success = true
-	return session, cleanup, nil
+	return c.config.Tuning.paced(ctx, &boundedMediaConn{Conn: dtlsConn, physical: conn}), cleanup, nil
+
 }
 
 type relayPacketConn struct {
@@ -173,3 +227,13 @@ func (r *relayPacketConn) LocalAddr() net.Addr                { return r.relay.L
 func (r *relayPacketConn) SetDeadline(t time.Time) error      { return r.relay.SetDeadline(t) }
 func (r *relayPacketConn) SetReadDeadline(t time.Time) error  { return r.relay.SetReadDeadline(t) }
 func (r *relayPacketConn) SetWriteDeadline(t time.Time) error { return r.relay.SetWriteDeadline(t) }
+
+type boundedMediaConn struct {
+	net.Conn
+	physical net.Conn
+}
+
+func (c *boundedMediaConn) Close() error {
+	_ = c.physical.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
+	return c.Conn.Close()
+}

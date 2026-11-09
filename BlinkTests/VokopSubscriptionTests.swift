@@ -7,6 +7,25 @@ final class VokopSubscriptionTests: XCTestCase {
     private func decode(_ value: String) throws -> VokopSubscription {
         try JSONDecoder().decode(VokopSubscription.self, from: Data(value.utf8))
     }
+    func testWireGuardRequiresV2AndCompatibleWrapper() throws {
+        var document = try JSONSerialization.jsonObject(with: Data(fixture.utf8)) as! [String: Any]
+        var profiles = document["profiles"] as! [[String: Any]]
+        profiles[0]["backend"] = "wireguard"
+        profiles[0]["wireguard"] = "[Interface]\nPrivateKey = fixture\n"
+        var turn = profiles[0]["turn"] as! [String: Any]
+        turn["protocol"] = "srtp"; profiles[0]["turn"] = turn; document["profiles"] = profiles
+        func value() throws -> VokopSubscription { try JSONDecoder().decode(VokopSubscription.self, from: JSONSerialization.data(withJSONObject: document)) }
+        XCTAssertThrowsError(try value().validate(now: now))
+        document["schema"] = "vokop.subscription.v2"
+        XCTAssertNoThrow(try value().validate(now: now))
+        XCTAssertEqual(try value().profiles[0].backendTitle, "WireGuard · SRTP")
+        turn["protocol"] = "wrap"; profiles[0]["turn"] = turn; document["profiles"] = profiles
+        XCTAssertThrowsError(try value().validate(now: now))
+        turn["wrap_key"] = String(repeating: "a", count: 64); profiles[0]["turn"] = turn; document["profiles"] = profiles
+        XCTAssertNoThrow(try value().validate(now: now))
+        turn["protocol"] = "kcp"; profiles[0]["turn"] = turn; document["profiles"] = profiles
+        XCTAssertThrowsError(try value().validate(now: now))
+    }
     func testPanelFixture() throws {
         let subscription = try decode(fixture)
         try subscription.validate(now: now)

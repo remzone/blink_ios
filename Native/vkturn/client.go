@@ -4,6 +4,7 @@ package vkturn
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"io"
 	"net"
@@ -22,6 +23,8 @@ var ErrCaptchaRequired = errors.New("captcha_required")
 // Config contains no server administration credentials. Streams is 1..16.
 // VKCallURL is the VK call join link from an authenticated subscription.
 type Config struct {
+	Protocol   string
+	WrapKey    string
 	Tuning     Tuning
 	TURNServer string
 	// DNSServer is an explicitly selected physical-network bootstrap DNS IP.
@@ -43,6 +46,7 @@ type sessionFactory func(context.Context, *net.UDPAddr) (*smux.Session, func(), 
 // External sockets require a non-nil fail-closed protector. The callback must
 // return promptly and must not retain fd: it is valid only during the callback.
 type Client struct {
+	group                           [20]byte
 	captchaMu                       sync.Mutex
 	challenge                       *captchaChallenge
 	ctx                             context.Context
@@ -50,6 +54,10 @@ type Client struct {
 	networkCtx                      context.Context
 	networkCancel                   context.CancelFunc
 	listener                        net.Listener
+	packets                         *net.UDPConn
+	packetOut                       chan []byte
+	packetAddress                   *net.UDPAddr
+	packetReady                     int
 	dialer                          *net.Dialer
 	resolver                        *net.Resolver
 	config                          Config
@@ -90,6 +98,19 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	}
 	if cfg.TURNServer != "" && !validTURNOverride(cfg.TURNServer) {
 		return nil, errors.New("invalid TURN override")
+	}
+	if cfg.Protocol != "" && cfg.Protocol != "kcp" && cfg.Protocol != "dtls" && cfg.Protocol != "srtp" && cfg.Protocol != "wrap" {
+		return nil, errors.New("unsupported VK wire protocol")
+	}
+	if cfg.Protocol == "wrap" {
+		if !validWrapKey(cfg.WrapKey) {
+			return nil, errors.New("invalid wrap key")
+		}
+	} else if cfg.WrapKey != "" {
+		return nil, errors.New("wrap key requires wrap protocol")
+	}
+	if cfg.Direct && cfg.Protocol != "" && cfg.Protocol != "kcp" {
+		return nil, errors.New("direct diagnostics support KCP only")
 	}
 	if err := cfg.Tuning.validate(); err != nil {
 		return nil, err
@@ -132,7 +153,19 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 		return dnsDialer.DialContext(ctx, network, net.JoinHostPort(cfg.DNSServer, "53"))
 	}}
 	c.dialer = &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second, Control: control, Resolver: c.resolver}
-	c.listener, err = net.Listen("tcp4", "127.0.0.1:0")
+	if cfg.Protocol != "" && cfg.Protocol != "kcp" {
+		c.packets, err = net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		c.packetOut = make(chan []byte, 64)
+		copy(c.group[:4], []byte{0xff, 'G', 'R', 'P'})
+		if _, err = rand.Read(c.group[4:]); err != nil {
+			_ = c.packets.Close()
+			cancel()
+			ncancel()
+			return nil, errors.New("session ID generation failed")
+		}
+	} else {
+		c.listener, err = net.Listen("tcp4", "127.0.0.1:0")
+	}
 	if err != nil {
 		cancel()
 		ncancel()
@@ -146,7 +179,11 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 		}
 	}
 	c.events <- "connecting"
-	go c.run()
+	if c.packets != nil {
+		go c.runPackets()
+	} else {
+		go c.run()
+	}
 	return c, nil
 }
 func validHost(host string) bool {
@@ -168,7 +205,12 @@ func validHost(host string) bool {
 	}
 	return true
 }
-func (c *Client) Addr() string   { return c.listener.Addr().String() }
+func (c *Client) Addr() string {
+	if c.packets != nil {
+		return c.packets.LocalAddr().String()
+	}
+	return c.listener.Addr().String()
+}
 func (c *Client) Status() string { c.mu.Lock(); defer c.mu.Unlock(); return c.state }
 
 // Events is a coalescing status callback channel, containing only fixed public

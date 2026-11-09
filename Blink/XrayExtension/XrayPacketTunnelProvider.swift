@@ -74,6 +74,11 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
                     self.networkProfile = nil
                     guard var document = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                           let handoff = document["bootstrap"] as? String, !handoff.isEmpty else { throw self.safeError("Откройте Blink для авторизации VK.") }
+                    if document["backend"] as? String == "wireguard", let source = document["wireguard"] as? String {
+                        let prepared = MobileImportProfile(source, &error)
+                        guard error == nil else { throw self.safeError("Неверный WG-конфиг в подписке.") }
+                        self.networkProfile = try JSONDecoder().decode(ImportedNetworkProfile.self, from: Data(prepared.utf8))
+                    }
                     // Consume the short-lived handoff before creating a transport. Restarts reauthorize in the app.
                     document["bootstrap"] = ""
                     let consumed = try JSONSerialization.data(withJSONObject: document)

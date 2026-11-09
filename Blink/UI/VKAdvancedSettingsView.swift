@@ -6,6 +6,10 @@ struct VKAdvancedSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Настройки панели", isOn: Binding(get: { options.followsServer }, set: { options.serverDefaults = $0 }))
+                Text("Включено: транспорт, число соединений, DNS и pacing берутся из подписки. Выключите для своих параметров. Тип VPN и протокол всегда задаёт серверный профиль.").font(.caption)
+            }
+            Section {
                 Picker("До TURN-релея", selection: $options.transport) {
                     Text("Автоматически").tag("auto"); Text("UDP").tag("udp"); Text("TCP").tag("tcp")
                 }
@@ -13,7 +17,7 @@ struct VKAdvancedSettingsView: View {
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 TextField("DNS до подключения", text: $options.bootstrapDNS)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
-            } header: { Label("Путь до VK", systemImage: "arrow.triangle.branch") } footer: { Text("Авто проверяет UDP и TCP до готовности DTLS/KCP/smux. Релей по умолчанию выдаёт VK; вручную нужен совместимый TURN с теми же учётными данными. Смена адреса не меняет способ авторизации на Яндекс или другой сервис.") }
+            } header: { Label("Путь до VK", systemImage: "arrow.triangle.branch") } footer: { Text("Для VLESS авто проверяет UDP и TCP до готовности DTLS/KCP/smux; для WG меняет TCP/UDP при ошибке сеанса. Релей по умолчанию выдаёт VK; вручную нужен совместимый TURN с теми же учётными данными. Смена адреса не меняет способ авторизации на Яндекс или другой сервис.") }
             Section {
                 Picker("Соединений с релеем", selection: $options.connections) {
                     Text("Как в подписке").tag(0)
@@ -41,8 +45,8 @@ struct VKAdvancedSettingsView: View {
                 }
             } header: { Label("Сглаживание всплесков", systemImage: "waveform.path") } footer: { Text("Распределяет исходящие пакеты во времени до отправки в DTLS. Может уменьшить потери на релеях с ограничением скорости; снижает максимум загрузки и добавляет задержку при насыщении. По умолчанию выключено.") }
             Section {
-                Label("DTLS → KCP → smux → VLESS", systemImage: "server.rack")
-                Text("SRTP, WRAP и csqtt требуют другого серверного протокола. Текущая подписка Vokop использует этот совместимый путь.")
+                Label("VLESS: KCP/smux · WG: DTLS / SRTP / WRAP", systemImage: "server.rack")
+                Text("Тип и обёртка заданы подпиской и должны совпадать с сервером. WG-конфиг содержит отдельные ключи и адрес интерфейса. WRAP-A, WRAP-S и csqtt пока не поддерживаются.")
                 Label("CAPTCHA: вручную через SDK VK", systemImage: "person.crop.rectangle.badge.checkmark")
                 Text("Если VK запросит проверку, приложение откроет её для вас перед запуском VPN.")
             }.font(.footnote).foregroundStyle(.secondary)

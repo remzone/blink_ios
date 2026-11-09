@@ -24,3 +24,10 @@ Wire framing, server authentication and cryptography are unchanged. The original
 KCP settings remain the default; advanced tuning changes only local behavior.
 New gomobile exports require rebuilding BlinkCore (`make prepare`). See
 [`docs/DIAGNOSTICS.md`](../docs/DIAGNOSTICS.md) for delivery limits and device validation.
+
+WG/VLESS connection modes are now mirrored to Android: datagram transport,
+WG endpoint rewriting, official standard WG backend (Amnezia retained for
+AWG-only extensions), server wire interop tests and SRTP/rtpopus adapters.
+Both modules use the same JSON backend/protocol contract. When reviewing
+`wg_backend.go`, retain the common `wgDevice` selection and protected bind;
+iOS runtime limits remain in the separate engine/extension overrides.

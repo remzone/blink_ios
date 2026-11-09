@@ -4,6 +4,11 @@ import Darwin
 /// Non-secret local preferences. Keys, call links and relay credentials stay in Keychain.
 struct VKConnectionOptions: Codable, Equatable {
     static let storageKey = "vokop.connectionOptions.v1"
+    var serverDefaults: Bool? = nil
+    var followsServer: Bool { serverDefaults != false }
+    func resolved(for turn: VokopSubscription.TURN) -> Self {
+        guard followsServer else { return self }; var value = turn.options?.resolved() ?? Self(); value.connections = 0; return value
+    }
     var transport = "auto"
     var preset = "compatibility"
     var connections = 1

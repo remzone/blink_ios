@@ -122,8 +122,8 @@ struct SubscriptionView: View {
                 Spacer(minLength: 0)
             }
             ViewThatFits(in: .horizontal) {
-                HStack { BlinkPill(title: "Через VK", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: "VLESS", color: BlinkTheme.vk) }
-                VStack(alignment: .leading) { BlinkPill(title: "Через VK", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: "VLESS", color: BlinkTheme.vk) }
+                HStack { BlinkPill(title: "Через VK", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: profile.backendTitle, color: BlinkTheme.vk) }
+                VStack(alignment: .leading) { BlinkPill(title: "Через VK", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: profile.backendTitle, color: BlinkTheme.vk) }
             }
             if let country = ProfilePresentation(name: profile.name).country { Label(country, systemImage: "globe.europe.africa").font(.caption).foregroundStyle(.secondary) }
             Text("Авторизация VK → VK TURN → VPN-сервер").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

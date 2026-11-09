@@ -67,7 +67,9 @@ final class XrayVPNController: ObservableObject {
     func connect(profile: VokopSubscription.Profile, expiresAt: Int64, options: VKConnectionOptions = .load(), secrets: SecretStore, diagnosticURL: String? = nil) async {
         guard !busy else { return }
         guard manager == nil || [.invalid, .disconnected].contains(manager!.connection.status) else { errorMessage = "Сначала отключите текущий VPN."; return }
+        let options = options.resolved(for: profile.turn)
         struct VKProfile: Encodable {
+            let backend: String; let `protocol`: String; let wrapKey: String; let wireguard: String
             let uuid: String; let peerHost: String; let peerPort: Int; let vkCallURL: String
             let streams: Int; let expiresAt: Int64; let dnsServer: String
             let turnServer: String; let tuning: VKConnectionOptions.Tuning
@@ -84,7 +86,15 @@ final class XrayVPNController: ObservableObject {
             guard operation == id else { return }
             guard existing == nil || [.invalid, .disconnected].contains(existing!.connection.status) else { busy = false; errorMessage = "Сначала отключите текущий VPN."; return }
             manager = existing
-            var value = VKProfile(uuid: profile.vless.uuid, peerHost: profile.turn.peer_host, peerPort: profile.turn.peer_port, vkCallURL: profile.turn.vk_call_url, streams: streams, expiresAt: expiresAt, dnsServer: options.bootstrapDNS, turnServer: options.turnServer, tuning: options.tuning, turnTransport: options.transport)
+            var value = VKProfile(backend: profile.backend ?? "vless", protocol: profile.turn.protocolName ?? "kcp", wrapKey: profile.turn.wrap_key ?? "", wireguard: profile.wireguard ?? "", uuid: profile.vless.uuid, peerHost: profile.turn.peer_host, peerPort: profile.turn.peer_port, vkCallURL: profile.turn.vk_call_url, streams: streams, expiresAt: expiresAt, dnsServer: options.bootstrapDNS, turnServer: options.turnServer, tuning: options.tuning, turnTransport: options.transport)
+            var captureAll = true
+            if let source = profile.wireguard {
+                var err: NSError?
+                let raw = MobileImportProfile(source, &err)
+                guard err == nil else { throw UniversalProfileError.invalid }
+                let network = try JSONDecoder().decode(ImportedNetworkProfile.self, from: Data(raw.utf8))
+                captureAll = (!network.addresses.contains { !$0.contains(":") } || network.routes.contains("0.0.0.0/0")) && (!network.addresses.contains { $0.contains(":") } || network.routes.contains("::/0"))
+            }
             let data = try JSONEncoder().encode(value)
             value.bootstrap = try await authorization.authorize(String(decoding: data, as: UTF8.self)) { [weak self] phase in
                 guard let self, self.operation == id, self.authorizationPhase != phase else { return }
@@ -95,7 +105,7 @@ final class XrayVPNController: ObservableObject {
             guard operation == id else { return }; busy = false
             profileName = profile.name
             let prepared = try JSONEncoder().encode(value)
-            await connect(json: String(decoding: prepared, as: UTF8.self), mode: "vkturn", server: profile.turn.peer_host, secrets: secrets)
+            await connect(json: String(decoding: prepared, as: UTF8.self), mode: "vkturn", server: profile.turn.peer_host, captureAll: captureAll, secrets: secrets)
         } catch {
             guard operation == id else { return }
             DiagnosticCenter.shared.record("connection.failed", fields: DiagnosticStore.errorFields(error), critical: true)

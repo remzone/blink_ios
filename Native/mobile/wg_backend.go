@@ -78,7 +78,7 @@ func (p *wgPacketDevice) Input(b []byte) {
 
 type wgBackend struct {
 	packets *wgPacketDevice
-	device  *device.Device
+	device  wgDevice
 }
 
 func (w *wgBackend) Input(p []byte) { w.packets.Input(p) }
@@ -104,7 +104,12 @@ func startWireGuard(p ImportedProfile, sink PacketWriter, protector Protector) (
 	adapter := &packetAdapter{sink: sink}
 	packets := newWGPacketDevice(adapter, c.MTU)
 	logger := &device.Logger{Verbosef: func(string, ...any) {}, Errorf: func(string, ...any) { recordWGDiagnosticError() }}
-	d := device.NewDevice(packets, &protectedWGBind{protector: protector}, logger)
+	var d wgDevice
+	if len(c.Amnezia) == 0 {
+		d = newStandardWGDevice(packets, protector)
+	} else {
+		d = device.NewDevice(packets, &protectedWGBind{protector: protector}, logger)
+	}
 	if e = d.IpcSet(uapi); e != nil {
 		d.Close()
 		adapter.Close()
