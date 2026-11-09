@@ -17,6 +17,20 @@
 в исходниках, не готовый проверенный iOS-релиз. Android с тем же native ядром
 проверяется отдельно в [blink-android](https://github.com/remzone/blink-android).
 
+## Настройки Xcode по умолчанию
+
+`project.yml` сохраняет версию **1.0.3**, номер сборки **1**, минимальную iOS **16.0**,
+название **Blink**, Bundle ID `com.blink.tunnel` и категорию **Utilities**.
+Для iPhone и iPad включены все четыре ориентации, стиль строки состояния — Default,
+скрытие при запуске выключено. Включены назначения iPhone, iPad, Mac (Designed for
+iPad) и Apple Vision (Designed for iPad). Это параметры совместимости iOS-приложения;
+отдельные Mac Catalyst / visionOS targets не создаются.
+
+После `make prepare` / `xcodegen generate` эти значения применяются автоматически.
+Версия и номер сборки заданы один раз на уровне проекта и наследуются приложением
+и Network Extension. В TestFlight workflow номер сборки автоматически заменяется
+на номер запуска GitHub Actions; версия берётся из `project.yml`.
+
 ## Профили и подписки
 
 Подробная [матрица протоколов и форматов панели](docs/PROTOCOLS.md) общая с Android.
