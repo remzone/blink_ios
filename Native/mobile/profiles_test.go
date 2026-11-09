@@ -85,3 +85,41 @@ func TestWireGuardAndAmneziaConf(t *testing.T) {
 		}
 	}
 }
+
+// A subscription is a collection of independently selectable endpoints, even
+// when several countries use the same protocol and the same credentials.
+func TestMultiCountrySubscriptionPreservesEndpoints(t *testing.T) {
+	links := []string{
+		"vless://00000000-0000-4000-8000-000000000001@de.example.org:443?security=tls&type=ws&path=%2Fvpn#DE%20Berlin",
+		"vless://00000000-0000-4000-8000-000000000001@nl.example.org:443?security=tls&type=tcp#NL%20Amsterdam",
+		"trojan://fixture@us.example.org:443?security=tls#US%20New%20York",
+		"hy2://fixture@jp.example.org:443#JP%20Tokyo",
+	}
+	plain := strings.Join(links, "\r\n")
+	sources := []string{plain}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		sources = append(sources, enc.EncodeToString([]byte(plain)))
+	}
+	names := []string{"DE Berlin", "NL Amsterdam", "US New York", "JP Tokyo"}
+	for i, source := range sources {
+		raw, err := ImportProfiles(source)
+		if err != nil {
+			t.Fatalf("encoding %d: %v", i, err)
+		}
+		var result struct {
+			Profiles []ImportedProfile
+			Rejected []json.RawMessage
+		}
+		if err := json.Unmarshal([]byte(raw), &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Profiles) != len(links) || len(result.Rejected) != 0 {
+			t.Fatalf("encoding %d: imported %d, rejected %d", i, len(result.Profiles), len(result.Rejected))
+		}
+		for j, profile := range result.Profiles {
+			if profile.Name != names[j] || profile.Source != links[j] {
+				t.Fatalf("encoding %d: endpoint %d lost its name or connection settings", i, j)
+			}
+		}
+	}
+}

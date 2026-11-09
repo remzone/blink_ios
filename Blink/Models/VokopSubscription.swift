@@ -78,11 +78,12 @@ struct VokopSubscription: Decodable {
 
 enum SubscriptionError: LocalizedError {
     case invalidURL, invalidDocument, responseTooLarge, accessDenied, requestFailed
-    case expired, futureDocument, outdatedRevision, invalidCallURL
+    case expired, futureDocument, outdatedRevision, invalidCallURL, reissued
     var errorDescription: String? {
         switch self {
         case .invalidURL: return "Use the full HTTPS subscription link supplied by your administrator."
         case .invalidDocument: return "Формат подписки не поддерживается или параметры серверов некорректны. Обратитесь к администратору."
+        case .reissued: return "Ключ подписки перевыпущен. Получите новую ссылку в боте провайдера и импортируйте её заново."
         case .expired: return "Срок подписки истёк. Проверьте дату и время устройства, затем обновите подписку."
         case .futureDocument: return "Дата выдачи подписки находится в будущем. Проверьте автоматическую настройку даты и времени устройства."
         case .outdatedRevision: return "Сервер вернул более старую версию подписки, чем уже сохранена. Обратитесь к администратору."

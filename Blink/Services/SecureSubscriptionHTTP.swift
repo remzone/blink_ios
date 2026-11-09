@@ -15,7 +15,9 @@ final class SecureSubscriptionHTTP: NSObject, URLSessionTaskDelegate {
         return url
     }
 
-    func fetch(_ value: String, accept: String = "text/plain, application/octet-stream;q=0.9") async throws -> Data {
+    // Some subscription APIs negotiate JSON renderers before returning a plain/base64 feed.
+    // Let the endpoint select its representation; ImportProfiles validates the actual body.
+    func fetch(_ value: String, accept: String = "*/*") async throws -> Data {
         let url = try Self.validatedURL(value)
         let diagnostics = await MainActor.run { DiagnosticCenter.shared.recorder }
         diagnostics.record("subscription.fetch")

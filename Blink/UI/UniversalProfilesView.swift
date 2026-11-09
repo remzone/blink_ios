@@ -209,7 +209,8 @@ struct UniversalProfilesView: View {
                 try Task.checkCancellation()
                 guard importID == id else { return }
                 var (added, rejected, notice) = try await Task.detached(priority: .userInitiated) {
-                    try UniversalProfile.imported(text)
+                    try SubscriptionFeedNotice.validate(text)
+                    return try UniversalProfile.imported(text)
                 }.value
                 try Task.checkCancellation()
                 guard importID == id else { return }

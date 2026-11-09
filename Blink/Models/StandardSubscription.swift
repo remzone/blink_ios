@@ -16,6 +16,7 @@ enum StandardSubscription {
     static func parse(_ data: Data) throws -> [StandardSubscriptionNode] {
         guard data.count <= maximumBytes else { throw SubscriptionError.responseTooLarge }
         guard var text = String(data: data, encoding: .utf8) else { throw SubscriptionError.invalidDocument }
+        try SubscriptionFeedNotice.validate(text)
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.first == "\u{feff}" { text.removeFirst() }
         if !text.contains("://") {

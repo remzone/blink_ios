@@ -57,4 +57,22 @@ final class StandardSubscriptionTests: XCTestCase {
         XCTAssertFalse(SecureSubscriptionHTTP.allowsRedirect(from: original, to: original, count: 6))
     }
 
+    func testReissuedFeedHasActionableErrorInPlainAndEncodedForms() {
+        let notice = "vless://00000000-0000-4000-8000-000000000001@127.0.0.1:1?type=tcp&security=none&encryption=none&x-durev-reissue=true#Renew"
+        let encoded = Data(notice.utf8).base64EncodedString()
+        let urlEncoded = encoded.replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        for source in [notice, "\u{feff}" + notice, encoded, urlEncoded] {
+            XCTAssertThrowsError(try SubscriptionFeedNotice.validate(source)) { error in
+                guard let subscriptionError = error as? SubscriptionError, case .reissued = subscriptionError else {
+                    return XCTFail("Expected reissued subscription error")
+                }
+            }
+            XCTAssertThrowsError(try StandardSubscription.parse(Data(source.utf8)))
+        }
+        // A marker on an actual endpoint, or one node within a full feed, cannot invalidate the feed.
+        XCTAssertNoThrow(try SubscriptionFeedNotice.validate(notice.replacingOccurrences(of: "127.0.0.1:1", with: "vpn.example.org:443")))
+        XCTAssertNoThrow(try SubscriptionFeedNotice.validate(notice + "\n" + notice))
+        XCTAssertNoThrow(try SubscriptionFeedNotice.validate("not base64"))
+    }
+
 }
