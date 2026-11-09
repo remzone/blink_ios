@@ -205,6 +205,12 @@ struct HomeView: View {
                 } catch { accountUnavailable = true; account = nil }
                 do {
                     let document = try await VokopSubscriptionClient().fetch(state.url, minimumRevision: state.highestRevision)
+                    try Task.checkCancellation()
+                    // A delayed refresh must not replace a newly imported subscription.
+                    if let raw = try container.secretStore.read(profileID: credentialID, kind: .subscriptionURL) {
+                        let current = try JSONDecoder().decode(SavedVokopSubscription.self, from: Data(raw.utf8))
+                        guard current.url == state.url, current.highestRevision <= document.revision else { return }
+                    } else { return }
                     turnDocument = document
                     let updated = SavedVokopSubscription(url: state.url, highestRevision: document.revision, document: document)
                     try container.secretStore.save(String(decoding: try JSONEncoder().encode(updated), as: UTF8.self), profileID: credentialID, kind: .subscriptionURL)
