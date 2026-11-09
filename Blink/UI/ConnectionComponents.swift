@@ -53,8 +53,8 @@ struct RouteExplainer: View {
                     VStack(alignment: .leading, spacing: 10) { pathNodes }
                 }.font(.caption.weight(.medium))
                 Text(route == .direct
-                     ? "Добавьте конфигурацию своего провайдера. Blink подключится к его серверу без участия VK."
-                     : "Нужна подписка Vokop. Сначала Blink пройдёт авторизацию VK, затем запустит VPN через VK TURN.")
+                     ? "Добавьте конфигурацию своего провайдера. Blink подключится к его серверу без авторизации провайдера."
+                     : "Нужна подписка Vokop. Сначала Blink пройдёт авторизацию VK, затем запустит VPN через TURN.")
                     .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
@@ -64,7 +64,7 @@ struct RouteExplainer: View {
         Label("Устройство", systemImage: "iphone")
         Image(systemName: "arrow.right").foregroundStyle(route.color).accessibilityHidden(true)
         if route == .vk {
-            Text("VK TURN").foregroundStyle(route.color)
+            Text("TURN").foregroundStyle(route.color)
             Image(systemName: "arrow.right").foregroundStyle(route.color).accessibilityHidden(true)
         }
         Label("Ваш сервер", systemImage: "server.rack")
@@ -103,7 +103,7 @@ struct ProtocolGuideView: View {
             List {
                 Section("Два способа подключения") {
                     guide("Обычный VPN", icon: "bolt.shield.fill", color: BlinkTheme.accent, text: "Ваше устройство подключается к серверу из конфигурации. Подходят ссылки VLESS, VMess, Trojan, Shadowsocks, профили WireGuard и другие поддерживаемые форматы.")
-                    guide("Через VK", icon: "arrow.triangle.branch", color: BlinkTheme.vk, text: "VLESS передаётся через VK TURN. Для этого режима нужна отдельная подписка Vokop. При подключении VK может попросить CAPTCHA.")
+                    guide("Через TURN", icon: "arrow.triangle.branch", color: BlinkTheme.vk, text: "VLESS передаётся через TURN. Для этого режима нужна отдельная подписка Vokop. При подключении VK может попросить CAPTCHA.")
                 }
                 Section("Что вы получили от провайдера") {
                     guide("Ссылка на сервер", icon: "link", color: BlinkTheme.accent, text: "Например, vless:// или trojan://. Содержит настройки одного сервера; добавляйте в обычный VPN.")
@@ -150,7 +150,7 @@ struct ProfileDetailsView: View {
                 Section("Подключение") {
                     LabeledContent("Режим", value: "Обычный VPN")
                     LabeledContent("Семейство", value: info.family)
-                    LabeledContent("VK и CAPTCHA", value: "Не используются")
+                    LabeledContent("TURN и CAPTCHA", value: "Не используются")
                     LabeledContent("Источник", value: profile.providerTitle ?? "Отдельная конфигурация")
                     if let country = profile.presentation.country { LabeledContent("Страна из названия", value: country) }
                     if let group = profile.providerGroup { LabeledContent("Группа провайдера", value: group) }
@@ -159,7 +159,7 @@ struct ProfileDetailsView: View {
                     Section("Сведения о подписке") { SubscriptionMetadataSummary(metadata: profile.subscriptionMetadata) }
                 }
                 Section {
-                    Text("Режим подключения и протокол — разные вещи. Этот профиль подключается к серверу напрямую. Для маршрута через VK нужна подписка Vokop в разделе «Через VK».")
+                    Text("Режим подключения и протокол — разные вещи. Этот профиль подключается к серверу напрямую. Для маршрута через TURN нужна подписка Vokop в разделе «Через TURN».")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
             }.listStyle(.insetGrouped).blinkScreen().navigationTitle("О конфигурации").navigationBarTitleDisplayMode(.inline)
@@ -180,8 +180,8 @@ struct VKJourneyView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Подключение через VK").font(.headline)
-            step(0, title: "Авторизация VK", detail: "В обычной сети, до запуска VPN")
+            Text("Подключение через TURN").font(.headline)
+            step(0, title: "Авторизация TURN", detail: "В обычной сети, до запуска VPN")
             step(1, title: "Ручная проверка", detail: "Только если VK запросит CAPTCHA")
             step(2, title: "Запуск VPN", detail: xray.isConnected ? "Туннель включён" : "Ожидаем готовности транспорта")
         }.frame(maxWidth: .infinity, alignment: .leading).blinkCard()

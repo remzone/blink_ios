@@ -2,6 +2,18 @@ import XCTest
 @testable import Blink
 
 final class VokopSubscriptionTests: XCTestCase {
+    func testCustomerPaymentWarningStartsAtExactly72Hours() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func account(_ remaining: Int64, active: Bool = true) throws -> SubscriptionAccount {
+            let raw: [String: Any] = ["schema": "vokop.account.v1", "active": active, "suspended": false, "paid_until": Int64(now.timeIntervalSince1970) + remaining, "remaining_seconds": max(0, remaining), "checked_at": Int64(now.timeIntervalSince1970)]
+            return try JSONDecoder().decode(SubscriptionAccount.self, from: JSONSerialization.data(withJSONObject: raw))
+        }
+        XCTAssertFalse(try account(259201).urgent(at: now))
+        XCTAssertTrue(try account(259200).urgent(at: now))
+        XCTAssertTrue(try account(-1, active: false).urgent(at: now))
+        XCTAssertTrue(try account(500000, active: false).urgent(at: now))
+    }
+
     private let now = Date(timeIntervalSince1970: 1_793_300_100)
     private let fixture = #"{"schema":"vokop.subscription.v1","revision":1,"issued_at":1793300000,"expires_at":1793303600,"profiles":[{"id":"first","name":"Contract fixture (not live)","vless":{"uuid":"00000000-0000-4000-8000-000000000001"},"turn":{"peer_host":"vpn.example.org","peer_port":56000,"vk_call_url":"https://vk.com/call/join/DEMO_TOKEN","streams":2}}]}"#
     private func decode(_ value: String) throws -> VokopSubscription {

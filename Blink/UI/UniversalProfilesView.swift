@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import PhotosUI
 
 struct UniversalProfilesView: View {
+    @EnvironmentObject private var navigation: BlinkNavigation
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var xray: XrayVPNController
     @Environment(\.dynamicTypeSize) private var textSize
@@ -144,7 +145,7 @@ struct UniversalProfilesView: View {
                     if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
                 }
                 Section {
-                    Text("Поддерживаются отдельные ссылки и списки серверов, подписки plain/base64, Xray JSON, узлы Clash YAML и WireGuard / AmneziaWG. Для Vokop используйте режим «Через VK».").font(.footnote).foregroundStyle(.secondary)
+                    Text("Поддерживаются отдельные ссылки и списки серверов, подписки plain/base64, Xray JSON, узлы Clash YAML и WireGuard / AmneziaWG. Для Vokop используйте режим «Через TURN».").font(.footnote).foregroundStyle(.secondary)
                 }
             }.blinkScreen().navigationTitle("Добавить VPN").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { importPresented = false }.disabled(importing) } }
@@ -179,7 +180,7 @@ struct UniversalProfilesView: View {
             Button { details = profile } label: {
                 Label("Что это за конфигурация?", systemImage: "info.circle").font(.caption).foregroundStyle(.secondary).frame(minHeight: 44)
             }.buttonStyle(.plain)
-            Button { Task { await xray.connectUniversal(source: profile.source, name: profile.name, secrets: container.secretStore, diagnosticURL: profile.subscriptionURL) } } label: { Label("Подключить", systemImage: "power") }
+            Button { Task { UserDefaults.standard.set(profile.id.uuidString, forKey: "blink.lastVPNProfile"); await xray.connectUniversal(source: profile.source, name: profile.name, secrets: container.secretStore, diagnosticURL: profile.subscriptionURL) } } label: { Label("Подключить", systemImage: "power") }
                 .buttonStyle(BlinkActionStyle(prominent: true)).disabled(xray.hasActiveConnection)
         }.frame(maxWidth: .infinity, alignment: .leading).blinkCard()
     }
@@ -222,6 +223,12 @@ struct UniversalProfilesView: View {
                 let metadata: SubscriptionMetadata?
                 switch try ProfileImportInput.parse(source) {
                 case .subscription(let url):
+                    if (try? VokopSubscriptionClient.validatedURL(url)) != nil {
+                        input = ""; importPresented = false
+                        navigation.pendingTURNURL = url
+                        navigation.openLibrary(.vk)
+                        return
+                    }
                     subscriptionURL = url
                     let document = try await SecureSubscriptionHTTP().fetchDocument(url)
                     metadata = document.metadata

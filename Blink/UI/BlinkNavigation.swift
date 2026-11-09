@@ -14,6 +14,7 @@ enum BlinkTab: String, CaseIterable, Identifiable {
 @MainActor
 final class BlinkNavigation: ObservableObject {
     @Published var tab: BlinkTab = .home
+    @Published var pendingTURNURL: String?
     @Published var route: ConnectionRoute = .direct
     func openLibrary(_ route: ConnectionRoute) { self.route = route; tab = .library }
 }

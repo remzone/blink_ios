@@ -17,6 +17,15 @@ final class ProfileImportInputTests: XCTestCase {
         }
     }
 
+    func testPanelFeedWrappersAreRecognizedAsTURN() throws {
+        let url = "https://panel.example/vokop-panel/api/vokop/v1/subscriptions/" + String(repeating: "A", count: 43)
+        for text in [url, "<\(url)>", "[Подписка](\(url))", "hiddify://import/\(url)", url.replacingOccurrences(of: "https:", with: "http:")] {
+            guard case .subscription(let value) = try ProfileImportInput.parse(text) else { return XCTFail("Subscription not recognized") }
+            XCTAssertEqual(try VokopSubscriptionClient.validatedURL(value).absoluteString, url)
+        }
+        XCTAssertThrowsError(try VokopSubscriptionClient.validatedURL(url + "/account"))
+    }
+
     func testConfigAndProtocolPayloadsAreNotURLDecoded() throws {
         for text in [node, "hiddify://import/" + node] {
             XCTAssertEqual(try ProfileImportInput.parse(text), .configuration(node))

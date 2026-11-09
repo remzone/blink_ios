@@ -67,7 +67,7 @@ final class XrayVPNController: ObservableObject {
     func connect(profile: VokopSubscription.Profile, expiresAt: Int64, options: VKConnectionOptions = .load(), secrets: SecretStore, diagnosticURL: String? = nil) async {
         guard !busy else { return }
         guard manager == nil || [.invalid, .disconnected].contains(manager!.connection.status) else { errorMessage = "Сначала отключите текущий VPN."; return }
-        let options = options.resolved(for: profile.turn)
+        let options = VKConnectionOptions().resolved(for: profile.turn)
         struct VKProfile: Encodable {
             let backend: String; let `protocol`: String; let wrapKey: String; let wireguard: String
             let uuid: String; let peerHost: String; let peerPort: Int; let vkCallURL: String

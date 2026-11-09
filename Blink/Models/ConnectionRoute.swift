@@ -4,8 +4,8 @@ enum ConnectionRoute: String, CaseIterable, Identifiable {
     case direct, vk
     var id: String { rawValue }
     static func fromProviderMode(_ mode: String?) -> ConnectionRoute { mode == "vkturn" ? .vk : .direct }
-    var title: String { self == .direct ? "Обычный VPN" : "Через VK" }
-    var subtitle: String { self == .direct ? "Напрямую к серверу" : "Маршрут через VK TURN" }
+    var title: String { self == .direct ? "Обычный VPN" : "TURN" }
+    var subtitle: String { self == .direct ? "Напрямую к серверу" : "Маршрут через TURN" }
     var symbol: String { self == .direct ? "bolt.shield.fill" : "arrow.triangle.branch" }
 }
 

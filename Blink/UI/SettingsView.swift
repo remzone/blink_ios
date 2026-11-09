@@ -19,13 +19,11 @@ struct SettingsView: View {
                 }.padding(.vertical, 8)
             }
             Section("Подключение") {
-                NavigationLink { VKAdvancedSettingsView() } label: {
-                    settingsRow("Параметры VK", detail: "Транспорт, релей, KCP и соединения", symbol: "slider.horizontal.3", color: BlinkTheme.vk)
-                }
+                settingsRow("Параметры из подписки", detail: "Транспорт и протокол задаёт провайдер в панели", symbol: "checkmark.shield.fill", color: BlinkTheme.vk)
             }
             Section("Помощь и диагностика") {
                 Button { guidePresented = true } label: {
-                    settingsRow("Режимы и конфигурации", detail: "Обычный VPN, VK и типы профилей", symbol: "questionmark.circle.fill", color: BlinkTheme.vk)
+                    settingsRow("Режимы и конфигурации", detail: "Обычный VPN, TURN и типы профилей", symbol: "questionmark.circle.fill", color: BlinkTheme.vk)
                 }.foregroundStyle(.primary)
                 NavigationLink { LogsView() } label: {
                     settingsRow("Журнал событий", detail: "Сообщения, сохранённые приложением", symbol: "text.alignleft", color: BlinkTheme.ice)

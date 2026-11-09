@@ -94,10 +94,14 @@ struct BlinkOrbit: View {
             Circle().fill(RadialGradient(colors: [color.opacity(connected ? 0.28 : 0.14), .clear], center: .center, startRadius: 10, endRadius: 120))
             Circle().strokeBorder(color.opacity(0.12), lineWidth: 1).padding(6)
             Circle().strokeBorder(color.opacity(0.2), lineWidth: 1).padding(20)
-            Circle().trim(from: 0.05, to: busy ? 0.3 : 0.82).stroke(AngularGradient(colors: [color.opacity(0.12), color.opacity(0.5), color], center: .center), style: StrokeStyle(lineWidth: 2.5, lineCap: .round)).padding(20).rotationEffect(.degrees(rotating ? 360 : 0))
-                .animation(animating ? .linear(duration: 2.8).repeatForever(autoreverses: false) : nil, value: rotating)
+            Circle().trim(from: 0.04, to: busy ? 0.68 : 0.96).stroke(AngularGradient(colors: [color.opacity(0.12), color.opacity(0.5), color], center: .center), style: StrokeStyle(lineWidth: 3.5, lineCap: .round)).padding(20).rotationEffect(.degrees(rotating ? 360 : 0))
+                .animation(animating ? .linear(duration: 3.6).repeatForever(autoreverses: false) : nil, value: rotating)
             Circle().fill(color.opacity(0.07)).overlay { Circle().strokeBorder(BlinkTheme.stroke) }.padding(43)
-            Image(systemName: connected ? "checkmark.shield" : "power").font(.system(size: 42, weight: .light)).foregroundStyle(color)
+            Circle().trim(from: 0.1, to: 0.45)
+                .stroke(color.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .padding(8).rotationEffect(.degrees(rotating ? -360 : 0))
+                .animation(animating ? .linear(duration: 6).repeatForever(autoreverses: false) : nil, value: rotating)
+            Image(systemName: "power").font(.system(size: 42, weight: .light)).foregroundStyle(color)
         }.aspectRatio(1, contentMode: .fit).frame(maxWidth: 210).accessibilityHidden(true)
             .onAppear { rotating = animating }
             .onChange(of: animating) { rotating = $0 }

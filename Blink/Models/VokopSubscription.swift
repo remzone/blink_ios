@@ -1,14 +1,14 @@
 import Foundation
 
 /// Preview-only wire model. Never convert this into a legacy WireGuard profile.
-struct VokopSubscription: Decodable {
+struct VokopSubscription: Codable {
     let schema: String
     let revision: Int64
     let issued_at: Int64
     let expires_at: Int64
     let profiles: [Profile]
 
-    struct Profile: Decodable, Identifiable {
+    struct Profile: Codable, Identifiable {
         let id: String
         let name: String
         let backend: String?
@@ -17,8 +17,8 @@ struct VokopSubscription: Decodable {
         let vless: VLESS
         let turn: TURN
     }
-    struct VLESS: Decodable { let uuid: String }
-    struct TURN: Decodable {
+    struct VLESS: Codable { let uuid: String }
+    struct TURN: Codable {
         let protocolName: String?
         let wrap_key: String?
         let options: ServerOptions?
@@ -29,7 +29,7 @@ struct VokopSubscription: Decodable {
         let streams: Int
     }
 
-    struct ServerOptions: Decodable {
+    struct ServerOptions: Codable {
         let transport: String?; let preset: String?; let dns: String?; let relay: String?
         let mtu: Int?; let pace: Int?; let window: Int?; let interval: Int?; let congestion: Bool?
         func resolved() -> VKConnectionOptions {
@@ -123,4 +123,23 @@ enum SubscriptionError: LocalizedError {
 struct SavedVokopSubscription: Codable {
     let url: String
     let highestRevision: Int64
+    let document: VokopSubscription?
+}
+
+struct SubscriptionAccount: Decodable {
+    let schema: String
+    let active: Bool
+    let suspended: Bool
+    let paid_until: Int64
+    let remaining_seconds: Int64
+    let checked_at: Int64
+    let payment_url: String?
+    var urgent: Bool { urgent(at: Date()) }
+    func urgent(at now: Date) -> Bool { !active || paid_until - Int64(now.timeIntervalSince1970) <= 3 * 86400 }
+    var balance: String {
+        let seconds = max(0, paid_until - Int64(Date().timeIntervalSince1970))
+        if seconds == 0 { return "Оплаченный срок закончился" }
+        if seconds < 86400 { return "Осталось менее суток" }
+        return "Осталось \(seconds / 86400) дн."
+    }
 }
