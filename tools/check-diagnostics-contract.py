@@ -27,3 +27,10 @@ for event in json.loads(fixture):
     assert set(event['fields']) <= allowed_fields
     assert all(isinstance(v, int) for v in event['fields'].values())
 print(f'PASS {len(emitted)} emitted event identifiers and shared diagnostic wire fixture (static guard)')
+
+# Diagnostic delivery is an explicit foreground action, never a connect/heartbeat side effect.
+center = (root / 'Blink/Services/DiagnosticCenter.swift').read_text()
+assert center.count('DiagnosticUploader.shared.flush()') == 1
+assert 'DiagnosticUploader.shared.flush()' in center.split('func flushNow() async {', 1)[1].split('func resetLocal()', 1)[0]
+assert 'DiagnosticUploader' not in (root / 'Blink/XrayExtension/XrayPacketTunnelProvider.swift').read_text()
+print('PASS diagnostic delivery only from explicit foreground flushNow')

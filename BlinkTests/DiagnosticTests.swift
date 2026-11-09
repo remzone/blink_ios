@@ -36,6 +36,16 @@ final class DiagnosticTests: XCTestCase {
         XCTAssertEqual(Set(events.map { $0.1.source }), ["app", "extension"])
         XCTAssertEqual(resumed.session.id, recorder.session.id)
     }
+    func testInvalidatedRecorderCannotRepopulateClearedJournal() throws {
+        let id = UUID().uuidString
+        defer { try? FileManager.default.removeItem(at: DiagnosticStore.directory(id)) }
+        let recorder = DiagnosticRecorder(sessionID: id)
+        recorder.record("app.launch", critical: true)
+        recorder.invalidateAndDrain()
+        try FileManager.default.removeItem(at: DiagnosticStore.directory(id))
+        recorder.record("app.foreground", critical: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: DiagnosticStore.directory(id).path))
+    }
     func testBoundedHTTPResponseParserHandlesChunkingAndRejectsTruncation() throws {
         let plain = Data("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}".utf8)
         XCTAssertEqual(try DiagnosticHTTPParser.parse(plain).get().data, Data("{}".utf8))

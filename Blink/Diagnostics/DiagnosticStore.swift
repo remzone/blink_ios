@@ -113,6 +113,8 @@ final class DiagnosticRecorder: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.blink.diagnostics.disk", qos: .utility)
     private let logger = Logger(subsystem: "com.blink.tunnel", category: "diagnostics")
     private var written = 0
+    private var enabled = true
+    func invalidateAndDrain() { queue.sync { enabled = false } }
     init(sessionID: String = UUID().uuidString, source: String = "app") {
         self.source = source
         let directory = DiagnosticStore.directory(sessionID)
@@ -128,6 +130,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
         let timeMs = occurredAt ?? Int64(now * 1000)
         let event = DiagnosticEvent(id: UUID().uuidString, occurredAt: timeMs, elapsedMs: max(0, timeMs - session.createdAt * 1000), source: override ?? source, event: name, fields: fields)
         let work: @Sendable () -> Void = { [self] in
+            guard enabled else { return }
             let directory = DiagnosticStore.directory(session.id)
             guard let data = try? JSONEncoder().encode(event), data.count <= 8192 else { return }
             let url = directory.appendingPathComponent(String(format: "%016lld", event.occurredAt) + "-" + event.id + ".event.json")

@@ -8,6 +8,7 @@ final class DiagnosticCenter: ObservableObject {
     @Published private(set) var sessionID: String
     @Published private(set) var pendingCount = 0
     @Published private(set) var lastSent = 0
+    @Published private(set) var sending = false
     @Published private(set) var lastHTTPStatus = 0
     @Published private(set) var events: [DiagnosticEvent] = []
     private(set) var recorder: DiagnosticRecorder
@@ -25,10 +26,9 @@ final class DiagnosticCenter: ObservableObject {
         DiagnosticStore.prune()
         loop = Task { [weak self] in
             while !Task.isCancelled {
-                let sent = await DiagnosticUploader.shared.flush()
                 guard let self else { return }
                 let snapshot = await Task.detached(priority: .utility) { (DiagnosticStore.pendingCount(), DiagnosticStore.allEvents()) }.value
-                self.lastSent += sent; self.lastHTTPStatus = await DiagnosticUploader.shared.lastHTTPStatus; self.pendingCount = snapshot.0; self.events = snapshot.1
+                self.pendingCount = snapshot.0; self.events = snapshot.1
                 let scheduled = Date(), revision = self.foregroundGeneration
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
                 let delay = Int64(max(0, (Date().timeIntervalSince(scheduled) - 5) * 1000))
@@ -42,6 +42,7 @@ final class DiagnosticCenter: ObservableObject {
         recentRecorders[previous.session.id] = previous
         if recentRecorders.count > 3 { recentRecorders = [previous.session.id: previous] }
         recorder = DiagnosticRecorder(); sessionID = recorder.session.id; userStopped = false
+        DiagnosticStore.prune()
         let manual = DiagnosticCredential.read(id: DiagnosticCredential.defaultID)
         let destination = (manual?.kind == "grant" ? manual : nil) ?? sourceURL.flatMap(DiagnosticCredential.destination) ?? manual
         if let destination, let id = UUID(uuidString: sessionID) {
@@ -50,7 +51,6 @@ final class DiagnosticCenter: ObservableObject {
             if let previousID = UUID(uuidString: previous.session.id), DiagnosticCredential.read(id: previousID) == nil { try? destination.save(id: previousID) }
         }
         recorder.record("connection.begin", fields: fields.merging(["mode": mode]) { _, new in new }, critical: true)
-        Task { _ = await DiagnosticUploader.shared.flush() }
     }
     func configure(_ value: String) throws {
         guard let destination = DiagnosticCredential.destination(value), destination.kind == "grant" else { throw DiagnosticHTTPError.invalid }
@@ -58,7 +58,6 @@ final class DiagnosticCenter: ObservableObject {
         for session in DiagnosticStore.sessions() {
             if let id = UUID(uuidString: session.id), DiagnosticCredential.read(id: id)?.uploadToken == nil { try destination.save(id: id) }
         }
-        Task { _ = await DiagnosticUploader.shared.flush() }
     }
     func resume(sessionID: String) {
         guard UUID(uuidString: sessionID) != nil else { return }
@@ -77,15 +76,29 @@ final class DiagnosticCenter: ObservableObject {
                 current.record("extension.interrupted", fields: ["reason": expected], critical: true)
                 current.marker(false)
             }
-            _ = await DiagnosticUploader.shared.flush()
         }
     }
     func flushNow() async {
+        guard !sending else { return }; sending = true
+        defer { sending = false }
         let sent = await DiagnosticUploader.shared.flush()
         lastSent += sent
         lastHTTPStatus = await DiagnosticUploader.shared.lastHTTPStatus
         let snapshot = await Task.detached(priority: .utility) { (DiagnosticStore.pendingCount(), DiagnosticStore.allEvents()) }.value
         pendingCount = snapshot.0; events = snapshot.1
+    }
+    func resetLocal() {
+        guard !sending else { return }
+        recorder.invalidateAndDrain()
+        for value in recentRecorders.values { value.invalidateAndDrain() }
+        recentRecorders.removeAll()
+        for session in DiagnosticStore.sessions() {
+            try? FileManager.default.removeItem(at: DiagnosticStore.directory(session.id))
+            if let id = UUID(uuidString: session.id) { try? KeychainSecretStore().save("", profileID: id, kind: .diagnostics) }
+        }
+        _ = MobileDrainDiagnosticEventsJSON()
+        recorder = DiagnosticRecorder(); sessionID = recorder.session.id
+        pendingCount = 0; events = []; lastSent = 0; lastHTTPStatus = 0
     }
     func drainNative() {
         struct NativeEvent: Decodable { let event: String; let fields: [String: Int64]?; let sessionId: String?; let occurredAt: Int64? }

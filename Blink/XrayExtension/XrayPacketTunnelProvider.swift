@@ -45,7 +45,6 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
                 self?.diagnostics?.record("extension.memory_warning", fields: DiagnosticStore.memory().merging(["reason": Int64(self?.memoryPressure?.data.rawValue ?? 0)]) { _, new in new }, critical: true)
             }
             self.memoryPressure = pressure; pressure.resume()
-            Task { _ = await DiagnosticUploader.shared.flush() }
             var startupStage: Int64 = 1
             do {
                 try NativeResources.prepare()
@@ -98,7 +97,6 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             fields["uptimeMs"] = Int64(Date().timeIntervalSince(startedAt) * 1000)
             fields["stage"] = 0
             diagnostics?.record("extension.heartbeat", fields: fields)
-            Task { _ = await DiagnosticUploader.shared.flush() }
         }
         let state = engine.status()
         if state == "ready" || state == "running" {
@@ -128,7 +126,6 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             guard let self else { completionHandler(); return }
             self.diagnostics?.record("extension.stop", fields: ["reason": Int64(reason.rawValue), "uptimeMs": Int64(Date().timeIntervalSince(self.startedAt) * 1000)], critical: true)
             self.diagnostics?.marker(false); self.memoryPressure?.cancel(); self.memoryPressure = nil
-            Task { _ = await DiagnosticUploader.shared.flush() }
             self.generation = UUID(); self.stateLock.lock(); self.running = false; self.stateLock.unlock()
             self.engine?.stop(); self.engine = nil; self.protector.stop(); self.networkProfile = nil
             self.finishStart(self.safeError("Запуск отменён.")); completionHandler()
@@ -153,7 +150,6 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             diagnostics?.record("extension.heartbeat", fields: fields)
         }
         drainNativeEvents()
-        if heartbeat % 5 == 0 { Task { _ = await DiagnosticUploader.shared.flush() } }
         if state == "stopped" || state == "captcha_required" {
             diagnostics?.record("extension.failure", fields: ["stage": 6], critical: true)
             diagnostics?.marker(false); memoryPressure?.cancel(); memoryPressure = nil
