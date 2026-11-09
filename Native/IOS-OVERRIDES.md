@@ -10,6 +10,9 @@ These files require manual review/merge when the Android mirror changes:
   and extraction; no complete embedded/on-disk copies in the extension heap.
 - `vkturn/diagnostics*`, `captcha.go`, `client.go`, `credentials.go`, `transport.go`:
   bounded stage events without credential-bearing error descriptions.
+- `vkturn/direct.go`, `vkturn/transport_metrics.go`: numeric KCP RTT/RTO sampling
+  and process-wide retransmit counters; telemetry stops with the transport.
+- `mobile/live_integration_test.go`: opt-in real packet/DNS/verified HTTPS acceptance.
 - `vkturn/turn_transport_test.go`: sustained echo fixture; keeps the mock peer alive
   until the client reads the queued smux response, avoiding teardown-induced EOF.
 

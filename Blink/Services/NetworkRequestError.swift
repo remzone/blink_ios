@@ -17,6 +17,20 @@ enum NetworkRequestError: LocalizedError {
         }
     }
 
+    /// Stable numeric transport errors for server diagnostics; no NSError text or URLs.
+    var diagnosticFields: [String: Int64] {
+        let code: URLError.Code
+        switch self {
+        case .httpStatus(let status): return ["httpStatus": Int64(status)]
+        case .offline: code = .notConnectedToInternet
+        case .timedOut: code = .timedOut
+        case .dns: code = .cannotFindHost
+        case .tls: code = .secureConnectionFailed
+        case .connection: code = .cannotConnectToHost
+        }
+        return ["errorDomain": 1, "errorCode": Int64(code.rawValue)]
+    }
+
     var errorDescription: String? {
         switch self {
         case .offline: return "Нет доступа к интернету. Проверьте Wi-Fi и разрешение на сотовые данные для Blink."

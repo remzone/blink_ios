@@ -18,11 +18,12 @@ new = b'github.com/remzone/blink_ios/native'
 ios_overrides = {Path(p) for p in (
     'mobile/diagnostics.go', 'mobile/diagnostics_test.go',
     'mobile/diagnostic_log.go', 'mobile/diagnostic_log_test.go',
-    'mobile/engine.go', 'mobile/wg_backend.go',
+    'mobile/engine.go', 'mobile/wg_backend.go', 'mobile/live_integration_test.go',
     'resources/assets.go', 'resources/assets_test.go',
     'vkturn/diagnostics.go', 'vkturn/diagnostics_test.go',
     'vkturn/captcha.go', 'vkturn/client.go', 'vkturn/credentials.go',
     'vkturn/transport.go', 'vkturn/turn_transport_test.go',
+    'vkturn/direct.go', 'vkturn/transport_metrics.go',
 )}
 files = [Path('go.mod'), Path('go.sum'), Path('LICENSE')]
 for folder in ('mobile', 'vkturn', 'share', 'resources'):

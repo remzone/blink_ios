@@ -2,6 +2,7 @@ package mobile
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/remzone/blink_ios/native/vkturn"
 	corelog "github.com/xtls/xray-core/common/log"
 	"net"
@@ -25,6 +26,12 @@ func TestDiagnosticCoreLogClassifiesWithoutFormattingSecrets(t *testing.T) {
 	if rows[1].Fields["stage"] != 1 {
 		t.Fatal("DNS category missing")
 	}
+	logger.Handle(&corelog.GeneralMessage{Severity: corelog.Severity_Info, Content: fmt.Errorf("private endpoint: %w", &net.DNSError{Err: "private-token", Name: "private.example"})})
+	var infoRows []vkturn.DiagnosticEvent
+	if json.Unmarshal([]byte(vkturn.DrainDiagnosticsJSON()), &infoRows) != nil || len(infoRows) != 1 || infoRows[0].Fields["stage"] != 1 {
+		t.Fatal("typed DNS failure at Info was lost")
+	}
+	logger.Handle(&corelog.GeneralMessage{Severity: corelog.Severity_Info, Content: unformattableDiagnosticError{}})
 	logger.Handle(&corelog.GeneralMessage{Severity: corelog.Severity_Debug, Content: unformattableDiagnosticError{}})
 	if vkturn.DrainDiagnosticsJSON() != "[]" {
 		t.Fatal("verbose debug logging enabled")

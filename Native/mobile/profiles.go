@@ -251,7 +251,11 @@ func StartProfile(raw string, sink PacketWriter, protector Protector) (*Engine, 
 	msg := json.RawMessage(encoded)
 	o.Settings = &msg
 	o.Tag = "proxy"
-	cfg, e := json.Marshal(map[string]any{"log": map[string]any{"loglevel": "none"}, "inbounds": []any{}, "outbounds": []any{o}})
+	outbound, e := share.MarshalOutbound(o)
+	if e != nil {
+		return nil, errors.New("invalid proxy configuration")
+	}
+	cfg, e := json.Marshal(map[string]any{"log": map[string]any{"loglevel": "none"}, "inbounds": []any{}, "outbounds": []json.RawMessage{outbound}})
 	if e != nil {
 		return nil, errors.New("invalid proxy configuration")
 	}

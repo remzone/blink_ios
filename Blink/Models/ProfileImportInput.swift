@@ -37,7 +37,8 @@ enum ProfileImportInput: Equatable {
             return try resolve(nested, depth: depth + 1)
         }
         if !text.contains("\n"), var components = URLComponents(string: text),
-           components.scheme?.lowercased() == "https" {
+           ["http", "https"].contains(components.scheme?.lowercased() ?? "") {
+            // Resolve copied HTTP links through verified HTTPS; do not fetch credentials in cleartext.
             components.scheme = "https"
             components.fragment = nil // Provider display labels are not part of the HTTP resource.
             guard let url = components.url else { throw ProfileImportInputError.invalidLink }

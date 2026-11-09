@@ -61,7 +61,7 @@ final class StandardSubscriptionTests: XCTestCase {
         let notice = "vless://00000000-0000-4000-8000-000000000001@127.0.0.1:1?type=tcp&security=none&encryption=none&x-durev-reissue=true#Renew"
         let encoded = Data(notice.utf8).base64EncodedString()
         let urlEncoded = encoded.replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-        for source in [notice, "\u{feff}" + notice, encoded, urlEncoded] {
+        for source in [notice, notice.replacingOccurrences(of: "#Renew", with: "#🔴 Ключ перевыпущен — возьмите новую ссылку в боте"), "\u{feff}" + notice, encoded, urlEncoded] {
             XCTAssertThrowsError(try SubscriptionFeedNotice.validate(source)) { error in
                 guard let subscriptionError = error as? SubscriptionError, case .reissued = subscriptionError else {
                     return XCTFail("Expected reissued subscription error")

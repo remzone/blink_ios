@@ -24,11 +24,19 @@ type diagnosticCoreLog struct {
 func newDiagnosticCoreLog() *diagnosticCoreLog {
 	return &diagnosticCoreLog{last: map[int]time.Time{}, counts: map[int]int64{}}
 }
-func (*diagnosticCoreLog) Severity() corelog.Severity { return corelog.Severity_Warning }
+func (*diagnosticCoreLog) Severity() corelog.Severity { return corelog.Severity_Info }
 func (l *diagnosticCoreLog) Handle(message corelog.Message) {
 	general, ok := message.(*corelog.GeneralMessage)
-	if !ok || general.Severity > corelog.Severity_Warning {
+	if !ok || general.Severity > corelog.Severity_Info {
 		return
+	}
+	// DNS/transport errors are sometimes reported at Info with a typed cause.
+	// Ignore ordinary Info messages and preformatted strings; never format them.
+	if general.Severity == corelog.Severity_Info {
+		err, ok := general.Content.(error)
+		if !ok || errors.Unwrap(err) == nil {
+			return
+		}
 	}
 	stage := int64(0)
 	if err, ok := general.Content.(error); ok {

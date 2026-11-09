@@ -36,7 +36,7 @@ func (proxy xrayShareLink) parseSecurityFromURL(link *url.URL, streamSettings *c
 	tlsSettings.Fingerprint = fp
 	realitySettings.Fingerprint = fp
 
-	sni := query.Get("sni")
+	sni := strings.TrimSpace(query.Get("sni"))
 	if sni == "" && (link.Scheme == "vmess" || link.Scheme == "vless") {
 		sni = link.Hostname()
 	}

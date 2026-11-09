@@ -48,7 +48,8 @@ func (c *Client) createDirectSession(ctx context.Context, peer *net.UDPAddr) (*s
 		cleanupSocket()
 		return nil, nil, errors.New("multiplexer initialization failed")
 	}
-	return session, func() { _ = session.Close(); _ = kcp.Close(); _ = dc.Close(); cleanupSocket() }, nil
+	stopMetrics := startTransportMetrics(ctx, kcp, 3)
+	return session, func() { stopMetrics(); _ = session.Close(); _ = kcp.Close(); _ = dc.Close(); cleanupSocket() }, nil
 }
 
 type connectedPacketConn struct {

@@ -6,7 +6,7 @@ final class ProfileImportInputTests: XCTestCase {
     private let node = "vless://00000000-0000-4000-8000-000000000001@example.org:443?path=%2Fvpn%3Fa%3D1&security=tls#Test"
 
     func testSubscriptionWrappersPreserveEncodedTokens() throws {
-        for text in [feed, "  \(feed)\n", "<\(feed)>", "[Подписка](\(feed))", "hiddify://import/\(feed)#Display"] {
+        for text in [feed, feed.replacingOccurrences(of: "https:", with: "http:"), "  \(feed)\n", "<\(feed)>", "[Подписка](\(feed))", "hiddify://import/\(feed)#Display"] {
             XCTAssertEqual(try ProfileImportInput.parse(text), .subscription(feed))
         }
         for scheme in ["clash", "clashmeta", "hiddify"] {

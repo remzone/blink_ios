@@ -83,7 +83,7 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	if err != nil {
 		return nil, err
 	}
-	if cfg.TURNTransport != "" && cfg.TURNTransport != "tcp" && cfg.TURNTransport != "udp" {
+	if cfg.TURNTransport != "" && cfg.TURNTransport != "auto" && cfg.TURNTransport != "tcp" && cfg.TURNTransport != "udp" {
 		return nil, errors.New("invalid TURN transport")
 	}
 	if net.ParseIP(cfg.DNSServer) == nil || cfg.Streams < 1 || cfg.Streams > 16 || cfg.PeerPort < 1 || cfg.PeerPort > 65535 || !validHost(cfg.PeerHost) {

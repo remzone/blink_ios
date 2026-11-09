@@ -4,7 +4,7 @@ import SwiftUI
 struct SubscriptionView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var xray: XrayVPNController
-    @AppStorage("vokop.turnTransport") private var transport = "tcp"
+    @AppStorage("vokop.turnTransport.v2") private var transport = "auto"
     @AppStorage("vokop.bootstrapDNS") private var bootstrapDNS = "1.1.1.1"
     @State private var link = ""
     @State private var document: VokopSubscription?
@@ -100,8 +100,8 @@ struct SubscriptionView: View {
             DisclosureGroup("Параметры подключения", isExpanded: $advanced) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Транспорт до VK").font(.caption).foregroundStyle(.secondary)
-                    Picker("Транспорт до VK", selection: $transport) { Text("TCP").tag("tcp"); Text("UDP").tag("udp") }.pickerStyle(.segmented)
-                    Text("Оставьте TCP, если провайдер не рекомендовал другое значение.").font(.caption).foregroundStyle(.secondary)
+                    Picker("Транспорт до VK", selection: $transport) { Text("Авто").tag("auto"); Text("UDP").tag("udp"); Text("TCP").tag("tcp") }.pickerStyle(.segmented)
+                    Text("Авто проверяет UDP и TCP, предпочитая UDP для меньшей задержки. TCP остаётся резервным вариантом, если UDP недоступен.").font(.caption).foregroundStyle(.secondary)
                     TextField("DNS для авторизации VK", text: $bootstrapDNS).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .padding(12).background(BlinkTheme.background, in: RoundedRectangle(cornerRadius: 12))
                     Text("Этот DNS используется до подключения VPN. Нужен IP-адрес резолвера.").font(.caption).foregroundStyle(.secondary)

@@ -18,7 +18,9 @@ enum SubscriptionFeedNotice {
         let lines = text.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-        guard lines.count == 1, let uri = URLComponents(string: lines[0]),
+        guard lines.count == 1 else { return }
+        let resource = String(lines[0].prefix { $0 != "#" })
+        guard let uri = URLComponents(string: resource),
               uri.scheme == "vless", uri.port == 1,
               ["127.0.0.1", "localhost", "::1", "[::1]"].contains(uri.host?.lowercased() ?? ""),
               uri.queryItems?.contains(where: { $0.name == "x-durev-reissue" && $0.value == "true" }) == true else { return }

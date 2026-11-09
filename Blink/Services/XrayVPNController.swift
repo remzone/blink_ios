@@ -64,7 +64,7 @@ final class XrayVPNController: ObservableObject {
             await connect(json: String(decoding: data, as: UTF8.self), mode: "universal", server: "Blink VPN", captureAll: full, secrets: secrets, diagnosticURL: diagnosticURL)
         } catch { errorMessage = "Не удалось сохранить VPN-профиль." }
     }
-    func connect(profile: VokopSubscription.Profile, expiresAt: Int64, dnsServer: String, transport: String = "tcp", secrets: SecretStore, diagnosticURL: String? = nil) async {
+    func connect(profile: VokopSubscription.Profile, expiresAt: Int64, dnsServer: String, transport: String = "auto", secrets: SecretStore, diagnosticURL: String? = nil) async {
         guard !busy else { return }
         guard manager == nil || [.invalid, .disconnected].contains(manager!.connection.status) else { errorMessage = "Сначала отключите текущий VPN."; return }
         struct VKProfile: Encodable {
@@ -72,7 +72,7 @@ final class XrayVPNController: ObservableObject {
             let streams: Int; let expiresAt: Int64; let dnsServer: String
             let manualCaptcha = true; let turnTransport: String; var bootstrap = ""
         }
-        guard expiresAt > Int64(Date().timeIntervalSince1970), ["tcp", "udp"].contains(transport) else { errorMessage = "Подписка истекла или неверный транспорт."; return }
+        guard expiresAt > Int64(Date().timeIntervalSince1970), ["auto", "tcp", "udp"].contains(transport) else { errorMessage = "Подписка истекла или неверный транспорт."; return }
         let id = UUID(); operation = id; busy = true; errorMessage = nil
         route = .vk; profileName = profile.name; authorizationPhase = .starting
         DiagnosticCenter.shared.begin(sourceURL: diagnosticURL, mode: 1, fields: ["streams": Int64(profile.turn.streams)])

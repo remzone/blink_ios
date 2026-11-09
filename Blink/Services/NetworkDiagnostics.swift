@@ -26,6 +26,16 @@ final class NetworkDiagnostics: ObservableObject {
         defer { busy = false; activeKey = nil }
         // A physical bypass is only necessary while our VPN is active.
         // Ordinary requests use Apple's network stack, including DNS64/NAT64.
+        let started = Date()
+        let recorder = DiagnosticCenter.shared.recorder
+        let probeStage: Int64 = kind == "ip" ? 0 : kind == "google" ? 1 : 2
+        func record(_ phase: Int64, fields: [String: Int64] = [:]) {
+            recorder.record("network.probe", fields: fields.merging([
+                "stage": probeStage, "mode": direct ? 0 : 1, "phase": phase,
+                "elapsedMs": Int64(Date().timeIntervalSince(started) * 1000)
+            ]) { _, new in new })
+        }
+        record(0)
         let bypass = direct && vpn.isConnected
         let protector = XraySocketProtector()
         if bypass { protector.start() }
@@ -45,14 +55,16 @@ final class NetworkDiagnostics: ObservableObject {
             }
             try Task.checkCancellation()
             guard !direct || bypass || !vpn.isConnected else {
+                record(3)
                 results[key] = "VPN включился во время проверки. Повторите запрос для прямого IP."
                 return
             }
-            guard direct || vpn.isConnected else { results[key] = "VPN отключился во время проверки."; return }
+            guard direct || vpn.isConnected else { record(3); results[key] = "VPN отключился во время проверки."; return }
+            record(1)
             let date = Date(timeIntervalSince1970: TimeInterval(value.checkedAt))
             results[key] = value.summary + " · " + date.formatted(date: .omitted, time: .shortened)
-        } catch is CancellationError { results[key] = "Проверка отменена." }
-        catch let error as NetworkRequestError { results[key] = error.localizedDescription }
-        catch { results[key] = "Проверка не прошла. Проверьте профиль и выбранную сеть." }
+        } catch is CancellationError { record(3); results[key] = "Проверка отменена." }
+        catch let error as NetworkRequestError { record(2, fields: error.diagnosticFields); results[key] = error.localizedDescription }
+        catch { record(2, fields: DiagnosticStore.errorFields(error)); results[key] = "Проверка не прошла. Проверьте профиль и выбранную сеть." }
     }
 }

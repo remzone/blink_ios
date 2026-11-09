@@ -11,6 +11,7 @@ import (
 	"github.com/xtaci/smux"
 	"io"
 	"net"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -18,7 +19,7 @@ import (
 )
 
 func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
-	for _, network := range []string{"tcp", "udp"} {
+	for _, network := range []string{"tcp", "udp", "auto-udp", "auto-tcp"} {
 		t.Run(network, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
@@ -28,7 +29,7 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 			}, LoggerFactory: logger}
 			generator := &turn.RelayAddressGeneratorStatic{RelayAddress: net.IPv4(127, 0, 0, 1), Address: "127.0.0.1"}
 			var addr string
-			if network == "udp" {
+			if strings.TrimPrefix(network, "auto-") == "udp" {
 				socket, e := net.ListenPacket("udp4", "127.0.0.1:0")
 				if e != nil {
 					t.Fatal(e)
@@ -114,7 +115,11 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 				}
 			}()
 			var protected atomic.Int32
-			c := &Client{config: Config{TURNTransport: network}, resolver: net.DefaultResolver, dialer: &net.Dialer{Timeout: time.Second, Control: func(_, _ string, raw syscall.RawConn) error { return raw.Control(func(uintptr) { protected.Add(1) }) }}}
+			mode := network
+			if strings.HasPrefix(mode, "auto-") {
+				mode = "auto"
+			}
+			c := &Client{config: Config{TURNTransport: mode}, resolver: net.DefaultResolver, dialer: &net.Dialer{Timeout: time.Second, Control: func(_, _ string, raw syscall.RawConn) error { return raw.Control(func(uintptr) { protected.Add(1) }) }}}
 			mux, cleanup, e := c.createSessionWithCredentials(ctx, peer.Addr().(*net.UDPAddr), "fixture", "fixture-password", addr)
 			if e != nil {
 				t.Fatal(e)

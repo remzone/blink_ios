@@ -29,6 +29,7 @@ func TestExplicitDirectDTLSAndProtectedSocket(t *testing.T) {
 	stop := context.AfterFunc(ctx, func() { listener.Close() })
 	defer stop()
 	done := make(chan error, 1)
+	received := make(chan struct{})
 	go func() {
 		conn, e := listener.Accept()
 		if e != nil {
@@ -65,6 +66,10 @@ func TestExplicitDirectDTLSAndProtectedSocket(t *testing.T) {
 			_, e = stream.Write(payload)
 		}
 		done <- e
+		select {
+		case <-received:
+		case <-ctx.Done():
+		}
 	}()
 	var protected atomic.Int32
 	client, err := Start(ctx, Config{DNSServer: "1.1.1.1", Direct: true, PeerHost: "127.0.0.1", PeerPort: listener.Addr().(*net.UDPAddr).Port, VKCallURL: "https://vk.ru/call/join/test", Streams: 1}, func(uintptr) bool { protected.Add(1); return true })
@@ -94,6 +99,7 @@ func TestExplicitDirectDTLSAndProtectedSocket(t *testing.T) {
 	if string(payload) != "hello" {
 		t.Fatal("invalid echo")
 	}
+	close(received)
 	if err = <-done; err != nil {
 		t.Fatal(err)
 	}
