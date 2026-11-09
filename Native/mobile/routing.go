@@ -65,7 +65,7 @@ func splitConfig(raw []byte, p *RoutingPolicy) ([]byte, packetOptions, error) {
 	// A stale/unknown fake address must never escape to an Internet socket.
 	c["outbounds"] = append(c["outbounds"].([]any), map[string]any{"tag": "blink-unmapped", "protocol": "blackhole"})
 	add([]string{"198.18.0.0/15"}, "ip", "blink-unmapped")
-	c["routing"] = map[string]any{"domainStrategy": "IPIfNonMatch", "domainMatcher": "hybrid", "rules": rules}
+	c["routing"] = map[string]any{"domainStrategy": "IPOnDemand", "domainMatcher": "hybrid", "rules": rules}
 	b, e := json.Marshal(c)
 	return b, opt, e
 }
