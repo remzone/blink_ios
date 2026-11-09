@@ -15,29 +15,30 @@ import (
 )
 
 type VKProfile struct {
-	Backend       string        `json:"backend"`
-	Protocol      string        `json:"protocol"`
-	WrapKey       string        `json:"wrapKey"`
-	WireGuard     string        `json:"wireguard"`
-	TURNServer    string        `json:"turnServer"`
-	Tuning        vkturn.Tuning `json:"tuning"`
-	Bootstrap     string        `json:"bootstrap,omitempty"`
-	TURNTransport string        `json:"turnTransport"`
-	DNSServer     string        `json:"dnsServer"`
-	ManualCaptcha bool          `json:"manualCaptcha"`
-	Mode          string        `json:"mode"`
-	UUID          string        `json:"uuid"`
-	PeerHost      string        `json:"peerHost"`
-	PeerPort      int           `json:"peerPort"`
-	VKCallURL     string        `json:"vkCallURL"`
-	Streams       int           `json:"streams"`
-	ExpiresAt     int64         `json:"expiresAt"`
+	Routing       *RoutingPolicy `json:"routing,omitempty"`
+	Backend       string         `json:"backend"`
+	Protocol      string         `json:"protocol"`
+	WrapKey       string         `json:"wrapKey"`
+	WireGuard     string         `json:"wireguard"`
+	TURNServer    string         `json:"turnServer"`
+	Tuning        vkturn.Tuning  `json:"tuning"`
+	Bootstrap     string         `json:"bootstrap,omitempty"`
+	TURNTransport string         `json:"turnTransport"`
+	DNSServer     string         `json:"dnsServer"`
+	ManualCaptcha bool           `json:"manualCaptcha"`
+	Mode          string         `json:"mode"`
+	UUID          string         `json:"uuid"`
+	PeerHost      string         `json:"peerHost"`
+	PeerPort      int            `json:"peerPort"`
+	VKCallURL     string         `json:"vkCallURL"`
+	Streams       int            `json:"streams"`
+	ExpiresAt     int64          `json:"expiresAt"`
 }
 
 // StartVK uses the same KCP/smux/TURN wire protocol as the pinned server.
 // Engine start is not evidence of transport readiness; inspect Status.
 func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engine, error) {
-	if len(profileJSON) > 65536 || sink == nil || protector == nil {
+	if len(profileJSON) > 1572864 || sink == nil || protector == nil {
 		return nil, errors.New("invalid VK profile")
 	}
 	var p VKProfile
@@ -52,8 +53,16 @@ func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engin
 	if p.Mode != "" && p.Mode != "vk" && p.Mode != "direct" {
 		return nil, errors.New("invalid tunnel mode")
 	}
+	if p.Routing != nil {
+		if e := p.Routing.Validate(); e != nil {
+			return nil, e
+		}
+		if p.Routing.Mode == "all" {
+			p.Routing = nil
+		}
+	}
 	now := time.Now().Unix()
-	if !validUUID(p.UUID) || p.ExpiresAt <= now || p.ExpiresAt > now+2678400 {
+	if !validUUID(p.UUID) || p.ExpiresAt <= now || p.ExpiresAt > 253402300799 {
 		return nil, errors.New("invalid or expired subscription")
 	}
 	if p.Backend == "" {
@@ -98,9 +107,18 @@ func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engin
 			_ = transport.Close()
 			return nil, parseErr
 		}
-		e, err = startWireGuard(profile, sink, protector)
+		if p.Routing != nil {
+			e, err = routedWireGuard(profile, p.Routing, sink, protector)
+		} else {
+			e, err = startWireGuard(profile, sink, protector)
+		}
 	} else {
-		e, err = Start(string(raw), sink, protector)
+		cfg, buildErr := buildConfig(string(raw))
+		if buildErr != nil {
+			_ = transport.Close()
+			return nil, buildErr
+		}
+		e, err = startRoutedConfig(cfg, p.Routing, sink, protector)
 	}
 	if err != nil {
 		_ = transport.Close()

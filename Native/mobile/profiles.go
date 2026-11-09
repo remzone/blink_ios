@@ -217,11 +217,24 @@ func decodeImported(raw string) (ImportedProfile, error) {
 
 // StartProfile connects directly, without VK/TURN credentials or CAPTCHA.
 func StartProfile(raw string, sink PacketWriter, protector Protector) (*Engine, error) {
+	return startProfileRouting(raw, nil, sink, protector)
+}
+func StartProfileRouted(raw, policyJSON string, sink PacketWriter, protector Protector) (*Engine, error) {
+	policy, e := decodeRouting(policyJSON)
+	if e != nil {
+		return nil, e
+	}
+	return startProfileRouting(raw, policy, sink, protector)
+}
+func startProfileRouting(raw string, policy *RoutingPolicy, sink PacketWriter, protector Protector) (*Engine, error) {
 	p, e := decodeImported(raw)
 	if e != nil {
 		return nil, e
 	}
 	if p.Kind == "tuic" || p.Kind == "hysteria1" {
+		if policy != nil {
+			return nil, errors.New("selective routing requires Xray or standard WireGuard")
+		}
 		return startQUIC(p, sink, protector)
 	}
 	if p.Kind == "xray-json" {
@@ -233,9 +246,15 @@ func StartProfile(raw string, sink PacketWriter, protector Protector) (*Engine, 
 		if e != nil {
 			return nil, e
 		}
+		if policy != nil {
+			return startRoutedConfig(raw, policy, sink, protector)
+		}
 		return startConfigOptions(raw, sink, protector, opt)
 	}
 	if p.Kind != "xray" {
+		if policy != nil {
+			return routedWireGuard(p, policy, sink, protector)
+		}
 		return startWireGuard(p, sink, protector)
 	}
 	o, e := share.ParseSingle(p.Source)
@@ -267,7 +286,7 @@ func StartProfile(raw string, sink PacketWriter, protector Protector) (*Engine, 
 	if e != nil {
 		return nil, errors.New("invalid proxy configuration")
 	}
-	return startConfig(cfg, sink, protector)
+	return startRoutedConfig(cfg, policy, sink, protector)
 }
 func resolveEndpoint(host string) (string, error) {
 	if net.ParseIP(host) != nil {

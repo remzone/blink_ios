@@ -19,6 +19,7 @@ struct SettingsView: View {
                 }.padding(.vertical, 8)
             }
             Section("Подключение") {
+                NavigationLink { RoutingSettingsView() } label: { settingsRow("Маршрутизация", detail: "Правила панели и свои исключения", symbol: "arrow.triangle.branch", color: BlinkTheme.accent) }
                 settingsRow("Параметры из подписки", detail: "Транспорт и протокол задаёт провайдер в панели", symbol: "checkmark.shield.fill", color: BlinkTheme.vk)
             }
             Section("Помощь и диагностика") {

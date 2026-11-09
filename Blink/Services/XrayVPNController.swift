@@ -58,13 +58,16 @@ final class XrayVPNController: ObservableObject {
             let wg = profile.kind == "wireguard" || profile.kind == "amneziawg"
             let has4 = profile.addresses.contains { !$0.contains(":") }, has6 = profile.addresses.contains { $0.contains(":") }
             let full = !wg || ((!has4 || profile.routes.contains("0.0.0.0/0")) && (!has6 || profile.routes.contains("::/0")))
-            let payload: [String: String] = ["schema": "blink.profile.v1", "source": source]
+            let routing = try LocalRoutingSettings.load().resolved(server: LocalRoutingSettings.cachedPolicy())
+            let routingObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(routing))
+            let payload: [String: Any] = ["schema": "blink.profile.v1", "source": source, "routing": routingObject]
             let data = try JSONSerialization.data(withJSONObject: payload)
             profileName = name
-            await connect(json: String(decoding: data, as: UTF8.self), mode: "universal", server: "Blink VPN", captureAll: full, secrets: secrets, diagnosticURL: diagnosticURL)
+            await connect(json: String(decoding: data, as: UTF8.self), mode: "universal", server: "Blink VPN", captureAll: routing.mode == "selected" ? false : full, secrets: secrets, diagnosticURL: diagnosticURL)
         } catch { errorMessage = "Не удалось сохранить VPN-профиль." }
     }
     func connect(profile: VokopSubscription.Profile, expiresAt: Int64, options: VKConnectionOptions = .load(), secrets: SecretStore, diagnosticURL: String? = nil) async {
+        guard PanelStatusCenter.shared.status?.maintenance != true else { errorMessage = "На сервере технические работы. Попробуйте позже."; return }
         guard !busy else { return }
         guard manager == nil || [.invalid, .disconnected].contains(manager!.connection.status) else { errorMessage = "Сначала отключите текущий VPN."; return }
         let options = VKConnectionOptions().resolved(for: profile.turn)
@@ -73,7 +76,7 @@ final class XrayVPNController: ObservableObject {
             let uuid: String; let peerHost: String; let peerPort: Int; let vkCallURL: String
             let streams: Int; let expiresAt: Int64; let dnsServer: String
             let turnServer: String; let tuning: VKConnectionOptions.Tuning
-            let manualCaptcha = true; let turnTransport: String; var bootstrap = ""
+            let manualCaptcha = true; let turnTransport: String; var bootstrap = ""; var routing: RoutingPolicy?
         }
         guard expiresAt > Int64(Date().timeIntervalSince1970), options.isValid else { errorMessage = "Подписка истекла или неверный транспорт."; return }
         let streams = options.connections == 0 ? profile.turn.streams : options.connections
@@ -87,6 +90,7 @@ final class XrayVPNController: ObservableObject {
             guard existing == nil || [.invalid, .disconnected].contains(existing!.connection.status) else { busy = false; errorMessage = "Сначала отключите текущий VPN."; return }
             manager = existing
             var value = VKProfile(backend: profile.backend ?? "vless", protocol: profile.turn.protocolName ?? "kcp", wrapKey: profile.turn.wrap_key ?? "", wireguard: profile.wireguard ?? "", uuid: profile.vless.uuid, peerHost: profile.turn.peer_host, peerPort: profile.turn.peer_port, vkCallURL: profile.turn.vk_call_url, streams: streams, expiresAt: expiresAt, dnsServer: options.bootstrapDNS, turnServer: options.turnServer, tuning: options.tuning, turnTransport: options.transport)
+            value.routing = try LocalRoutingSettings.load().resolved(server: LocalRoutingSettings.cachedPolicy())
             var captureAll = true
             if let source = profile.wireguard {
                 var err: NSError?
@@ -95,6 +99,7 @@ final class XrayVPNController: ObservableObject {
                 let network = try JSONDecoder().decode(ImportedNetworkProfile.self, from: Data(raw.utf8))
                 captureAll = (!network.addresses.contains { !$0.contains(":") } || network.routes.contains("0.0.0.0/0")) && (!network.addresses.contains { $0.contains(":") } || network.routes.contains("::/0"))
             }
+            if value.routing?.mode == "selected" { captureAll = false }
             let data = try JSONEncoder().encode(value)
             value.bootstrap = try await authorization.authorize(String(decoding: data, as: UTF8.self)) { [weak self] phase in
                 guard let self, self.operation == id, self.authorizationPhase != phase else { return }

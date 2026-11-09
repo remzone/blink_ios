@@ -7,6 +7,7 @@ struct VokopSubscription: Codable {
     let issued_at: Int64
     let expires_at: Int64
     let profiles: [Profile]
+    var routing: RoutingPolicy? = nil
 
     struct Profile: Codable, Identifiable {
         let id: String
@@ -45,17 +46,19 @@ struct VokopSubscription: Codable {
         guard expires_at > timestamp else { throw SubscriptionError.expired }
         guard issued_at <= timestamp + 300 else { throw SubscriptionError.futureDocument }
         guard revision >= minimumRevision else { throw SubscriptionError.outdatedRevision }
-        guard ["vokop.subscription.v1", "vokop.subscription.v2"].contains(schema), revision > 0,
+        guard ["vokop.subscription.v1", "vokop.subscription.v2", "vokop.subscription.v3"].contains(schema), revision > 0,
               revision <= 9_007_199_254_740_991,
               issued_at >= 0, expires_at > issued_at,
-              expires_at - issued_at <= 2_678_400,
+              expires_at <= 253_402_300_799,
               (1...16).contains(profiles.count),
               Set(profiles.map(\.id)).count == profiles.count else {
             throw SubscriptionError.invalidDocument
         }
+        if schema == "vokop.subscription.v3", routing?.mode != "selected" { throw SubscriptionError.invalidDocument }
+        if let routing { guard routing.schema == "blink.routing.v1", ["all", "selected"].contains(routing.mode), routing.revision > 0, routing.domains.count + routing.ips.count <= 20_000 else { throw SubscriptionError.invalidDocument } }
         for profile in profiles {
             let backend = profile.backend ?? "vless", wire = profile.turn.protocolName ?? "kcp"
-            guard ["vless", "wireguard"].contains(backend), (backend != "wireguard" || schema == "vokop.subscription.v2"),
+            guard ["vless", "wireguard"].contains(backend), (backend != "wireguard" || schema == "vokop.subscription.v2" || schema == "vokop.subscription.v3"),
                   (backend == "vless" ? wire == "kcp" && profile.wireguard == nil : ["dtls", "srtp", "wrap"].contains(wire) && !(profile.wireguard ?? "").isEmpty && (profile.wireguard?.utf8.count ?? 0) <= 16384),
                   (wire == "wrap" ? Self.matches(profile.turn.wrap_key ?? "", "^[A-Fa-f0-9]{64}$") : (profile.turn.wrap_key ?? "").isEmpty),
                   profile.turn.options?.resolved().isValid ?? true else { throw SubscriptionError.invalidDocument }

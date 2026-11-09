@@ -13,6 +13,10 @@ struct HomeView: View {
     @State private var turnURL = ""
     @State private var account: SubscriptionAccount?
     @State private var accountUnavailable = false
+    @ObservedObject private var statusCenter = PanelStatusCenter.shared
+    private var serviceStatus: PanelServiceStatus? { statusCenter.status }
+    private var managedMaintenance: Bool { serviceStatus?.maintenance == true && displayedRoute == .vk }
+    @State private var seenServiceRevision: Int64 = -1
     @AppStorage("blink.lastVPNProfile") private var vpnID = ""
     @AppStorage("blink.lastTURNProfile") private var turnID = ""
     private let credentialID = UUID(uuidString: "57f8b06a-c211-4b4f-8525-14cb2e7a882e")!
@@ -42,6 +46,10 @@ struct HomeView: View {
         }
         .navigationTitle("Blink").navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $guidePresented) { ProtocolGuideView() }
+        .onChange(of: statusCenter.status?.revision) { value in
+            if seenServiceRevision >= 0, value != seenServiceRevision { Task { await loadLibrary() } }
+            seenServiceRevision = value ?? -1
+        }
         .animation(reduceMotion ? nil : BlinkTheme.spring, value: xray.hasActiveConnection)
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
@@ -75,13 +83,13 @@ struct HomeView: View {
                 Label("BLINK CONNECT", systemImage: "sparkle").font(.caption2.weight(.bold)).tracking(1.8)
                 Spacer()
                 HStack(spacing: 6) {
-                    Circle().fill(xray.isConnected ? BlinkTheme.primaryFill : .white.opacity(0.5)).frame(width: 6, height: 6)
-                    Text(xray.isConnected ? "VPN включён" : xray.isConnecting ? "Подключение" : xray.isDisconnecting ? "Отключение" : "VPN выключен")
+                    Circle().fill(managedMaintenance ? Color.orange : xray.isConnected ? BlinkTheme.primaryFill : .white.opacity(0.5)).frame(width: 6, height: 6)
+                    Text(managedMaintenance ? "Технические работы" : xray.isConnected ? "VPN включён" : xray.isConnecting ? "Подключение" : xray.isDisconnecting ? "Отключение" : "VPN выключен")
                         .font(.caption.weight(.medium))
                 }
             }.foregroundStyle(.white.opacity(0.72))
             Button { primaryAction() } label: {
-                BlinkOrbit(connected: xray.isConnected, busy: xray.isConnecting, color: displayedRoute == .vk ? Color(red: 0.69, green: 0.72, blue: 1) : BlinkTheme.primaryFill)
+                BlinkOrbit(connected: xray.isConnected && !managedMaintenance, busy: xray.isConnecting && !managedMaintenance, color: managedMaintenance ? Color.orange : displayedRoute == .vk ? Color(red: 0.69, green: 0.72, blue: 1) : BlinkTheme.primaryFill)
                     .frame(maxWidth: 210).frame(maxWidth: .infinity).padding(.vertical, 8)
             }.buttonStyle(.plain).disabled(xray.isDisconnecting)
                 .accessibilityLabel(primaryTitle)
@@ -91,7 +99,7 @@ struct HomeView: View {
             }.pickerStyle(.segmented).disabled(xray.hasActiveConnection)
                 .colorScheme(.dark)
             VStack(spacing: 7) {
-                Text(xray.isConnected ? "Вы на связи" : xray.isConnecting ? "Создаём защищённый маршрут" : "Ваше подключение")
+                Text(managedMaintenance ? "Обновляем сервер" : xray.isConnected ? "Вы на связи" : xray.isConnecting ? "Создаём защищённый маршрут" : "Ваше подключение")
                     .font(.system(.title2, design: .rounded).weight(.bold)).multilineTextAlignment(.center)
                 Menu {
                     if displayedRoute == .direct {
@@ -122,7 +130,7 @@ struct HomeView: View {
             }.foregroundStyle(.white)
             Button { primaryAction() } label: { Label(primaryTitle, systemImage: "power") }
                 .buttonStyle(BlinkActionStyle(prominent: true, color: displayedRoute == .vk ? Color(red: 0.72, green: 0.75, blue: 1) : BlinkTheme.primaryFill))
-                .disabled(xray.isDisconnecting)
+                .disabled(xray.isDisconnecting || (managedMaintenance && !xray.hasActiveConnection))
             Text(xray.hasActiveConnection ? xray.status : selectedName)
                 .font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true).accessibilityLabel("Состояние: \(xray.status)")
@@ -140,6 +148,7 @@ struct HomeView: View {
         xray.isDisconnecting ? "Отключаем…" : xray.isConnecting ? "Отменить подключение" : xray.isConnected ? "Отключить" : "Подключить"
     }
     private func primaryAction() {
+        if managedMaintenance && !xray.hasActiveConnection { return }
         if xray.hasActiveConnection { xray.disconnect() }
         else if navigation.route == .direct, let profile = selectedVPN {
             vpnID = profile.id.uuidString
@@ -198,7 +207,7 @@ struct HomeView: View {
                 let state = try JSONDecoder().decode(SavedVokopSubscription.self, from: Data(raw.utf8))
                 turnURL = state.url; turnDocument = state.document
                 do {
-                    let data = try await SecureSubscriptionHTTP().fetch(try VokopSubscriptionClient.validatedURL(state.url).absoluteString + "/account", accept: "application/json")
+                    let data = try await VokopSubscriptionClient.fetchControl(try VokopSubscriptionClient.validatedURL(state.url).absoluteString + "/account")
                     let status = try JSONDecoder().decode(SubscriptionAccount.self, from: data)
                     guard status.schema == "vokop.account.v1", status.checked_at > 0, (0...253_402_300_799).contains(status.paid_until) else { throw SubscriptionError.invalidDocument }
                     account = status; accountUnavailable = false

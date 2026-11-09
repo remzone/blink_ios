@@ -11,6 +11,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
     private var engine: MobileEngine?
     private var generation = UUID()
     private var running = false
+    private var selectiveRouting = false
     private var networkProfile: ImportedNetworkProfile?
     private var unreadySince: Date?
     private var diagnostics: DiagnosticRecorder?
@@ -58,15 +59,18 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
                 startupStage = 3
                 self.protector.start(); var error: NSError?
                 if mode == "universal" {
-                    struct Source: Decodable { let schema: String; let source: String }
+                    struct Source: Decodable { let schema: String; let source: String; let routing: RoutingPolicy? }
                     let source = try JSONDecoder().decode(Source.self, from: Data(raw.utf8))
                     guard source.schema == "blink.profile.v1" else { throw self.safeError("Неверный формат VPN-профиля.") }
                     let prepared = MobileImportProfile(source.source, &error)
                     guard error == nil else { throw self.safeError("Протокол или параметры не поддерживаются.") }
                     self.networkProfile = try JSONDecoder().decode(ImportedNetworkProfile.self, from: Data(prepared.utf8))
-                    self.engine = MobileStartProfile(prepared, self, self.protector, &error)
+                    self.selectiveRouting = source.routing?.mode == "selected"
+                    if let routing = source.routing {
+                        self.engine = MobileStartProfileRouted(prepared, String(decoding: try JSONEncoder().encode(routing), as: UTF8.self), self, self.protector, &error)
+                    } else { self.engine = MobileStartProfile(prepared, self, self.protector, &error) }
                 } else if mode == "direct" {
-                    self.networkProfile = nil
+                    self.networkProfile = nil; self.selectiveRouting = false
                     let prepared = MobilePrepareProfile(raw, &error)
                     guard error == nil else { throw self.safeError("Не удалось подготовить адрес сервера.") }
                     self.engine = MobileStart(prepared, self, self.protector, &error)
@@ -79,6 +83,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
                         guard error == nil else { throw self.safeError("Неверный WG-конфиг в подписке.") }
                         self.networkProfile = try JSONDecoder().decode(ImportedNetworkProfile.self, from: Data(prepared.utf8))
                     }
+                    self.selectiveRouting = (document["routing"] as? [String: Any])?["mode"] as? String == "selected"
                     // Consume the short-lived handoff before creating a transport. Restarts reauthorize in the app.
                     document["bootstrap"] = ""
                     let consumed = try JSONSerialization.data(withJSONObject: document)
@@ -210,9 +215,9 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
     }
     private func settings() throws -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-        let explicitWG = networkProfile.map { $0.kind == "wireguard" || $0.kind == "amneziawg" } ?? false
-        let addresses = explicitWG ? networkProfile!.addresses : ["10.77.0.2/32"]
-        let routes = explicitWG ? networkProfile!.routes : ["0.0.0.0/0"]
+        let explicitWG = !selectiveRouting && (networkProfile.map { $0.kind == "wireguard" || $0.kind == "amneziawg" } ?? false)
+        let addresses = explicitWG ? networkProfile!.addresses : (selectiveRouting ? ["10.77.0.2/32", "fd77::2/128"] : ["10.77.0.2/32"])
+        let routes = explicitWG ? networkProfile!.routes : (selectiveRouting ? ["0.0.0.0/0", "::/0"] : ["0.0.0.0/0"])
         var v4: [String] = []; var masks: [String] = []; var v6: [String] = []; var prefixes: [NSNumber] = []
         for value in addresses {
             let p = try cidr(value)

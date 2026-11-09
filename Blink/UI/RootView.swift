@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var phase
     @EnvironmentObject private var authorizer: VKPreflightAuthorizer
     @StateObject private var navigation = BlinkNavigation()
+    @ObservedObject private var statusCenter = PanelStatusCenter.shared
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -28,6 +29,22 @@ struct RootView: View {
                             .tabItem { Label(tab.title, systemImage: tab.symbol) }.tag(tab)
                     }
                 }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let status = statusCenter.status, status.maintenance {
+                Label(status.message, systemImage: "wrench.and.screwdriver.fill")
+                    .font(.subheadline.weight(.medium)).foregroundStyle(.orange)
+                    .padding(.horizontal, 18).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.regularMaterial)
+                    .accessibilityLabel("Технические работы. " + status.message)
+            }
+        }
+        .task(id: phase) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                await statusCenter.refresh()
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
         }
         .environmentObject(navigation)
