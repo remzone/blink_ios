@@ -15,17 +15,19 @@ import (
 )
 
 type VKProfile struct {
-	Bootstrap     string `json:"bootstrap,omitempty"`
-	TURNTransport string `json:"turnTransport"`
-	DNSServer     string `json:"dnsServer"`
-	ManualCaptcha bool   `json:"manualCaptcha"`
-	Mode          string `json:"mode"`
-	UUID          string `json:"uuid"`
-	PeerHost      string `json:"peerHost"`
-	PeerPort      int    `json:"peerPort"`
-	VKCallURL     string `json:"vkCallURL"`
-	Streams       int    `json:"streams"`
-	ExpiresAt     int64  `json:"expiresAt"`
+	TURNServer    string        `json:"turnServer"`
+	Tuning        vkturn.Tuning `json:"tuning"`
+	Bootstrap     string        `json:"bootstrap,omitempty"`
+	TURNTransport string        `json:"turnTransport"`
+	DNSServer     string        `json:"dnsServer"`
+	ManualCaptcha bool          `json:"manualCaptcha"`
+	Mode          string        `json:"mode"`
+	UUID          string        `json:"uuid"`
+	PeerHost      string        `json:"peerHost"`
+	PeerPort      int           `json:"peerPort"`
+	VKCallURL     string        `json:"vkCallURL"`
+	Streams       int           `json:"streams"`
+	ExpiresAt     int64         `json:"expiresAt"`
 }
 
 // StartVK uses the same KCP/smux/TURN wire protocol as the pinned server.
@@ -50,7 +52,7 @@ func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engin
 	if !validUUID(p.UUID) || p.ExpiresAt <= now || p.ExpiresAt > now+2678400 {
 		return nil, errors.New("invalid or expired subscription")
 	}
-	transport, err := vkturn.Start(context.Background(), vkturn.Config{Bootstrap: p.Bootstrap, PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct", ManualCaptcha: p.ManualCaptcha, TURNTransport: p.TURNTransport}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
+	transport, err := vkturn.Start(context.Background(), vkturn.Config{TURNServer: p.TURNServer, Tuning: p.Tuning, Bootstrap: p.Bootstrap, PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct", ManualCaptcha: p.ManualCaptcha, TURNTransport: p.TURNTransport}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
 	if err != nil {
 		return nil, errors.New("VK transport initialization failed")
 	}

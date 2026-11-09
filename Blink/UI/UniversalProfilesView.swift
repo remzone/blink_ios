@@ -33,7 +33,7 @@ struct UniversalProfilesView: View {
         profiles.filter { profile in
             let matchesSource = filter == 0 || (filter == 1 ? profile.subscriptionURL != nil : profile.subscriptionURL == nil)
             let info = VPNProtocolInfo.describe(kind: profile.kind, source: profile.source)
-            return matchesSource && (search.isEmpty || (profile.name + " " + info.title).localizedCaseInsensitiveContains(search))
+            return matchesSource && (search.isEmpty || ([profile.name, info.title, profile.presentation.country ?? "", profile.presentation.countryCode ?? "", profile.providerTitle ?? "", profile.providerGroup ?? ""].joined(separator: " ")).localizedCaseInsensitiveContains(search))
         }
     }
     private var subscriptions: [String] { Array(Set(profiles.compactMap(\.subscriptionURL))).sorted() }
@@ -64,17 +64,21 @@ struct UniversalProfilesView: View {
                     BlinkSectionHeading(title: "Подписки", detail: "\(subscriptions.count)")
                     VStack(spacing: 0) {
                         ForEach(subscriptions, id: \.self) { url in
-                            Button { importText(url) } label: {
-                                HStack(spacing: 12) {
-                                    BlinkBadge(symbol: "rectangle.stack")
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(URLComponents(string: url)?.host ?? "Провайдер").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                        Text("Обновить список серверов").font(.caption).foregroundStyle(.secondary)
+                            let metadata = profiles.first(where: { $0.subscriptionURL == url })?.subscriptionMetadata
+                            VStack(alignment: .leading, spacing: 10) {
+                                Button { importText(url) } label: {
+                                    HStack(spacing: 12) {
+                                        ProfileEmojiBadge(presentation: ProfilePresentation(name: metadata?.title ?? ""), fallback: "rectangle.stack")
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(metadata?.title ?? URLComponents(string: url)?.host ?? "Провайдер").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                                            Text("Обновить · \(profiles.filter { $0.subscriptionURL == url }.count) серверов").font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "arrow.clockwise").foregroundStyle(BlinkTheme.accent)
                                     }
-                                    Spacer()
-                                    Image(systemName: "arrow.clockwise").foregroundStyle(BlinkTheme.accent)
-                                }.padding(.vertical, 10)
-                            }.buttonStyle(.plain).disabled(importing || readingPhoto)
+                                }.buttonStyle(.plain).disabled(importing || readingPhoto)
+                                SubscriptionMetadataSummary(metadata: metadata)
+                            }.padding(.vertical, 10)
                         }
                     }.blinkCard()
                 }
@@ -151,16 +155,22 @@ struct UniversalProfilesView: View {
         let info = VPNProtocolInfo.describe(kind: profile.kind, source: profile.source)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
-                BlinkBadge(symbol: info.symbol)
+                ProfileEmojiBadge(presentation: profile.presentation, fallback: info.symbol)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(profile.name).font(.headline).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-                    Text(profile.subscriptionURL.flatMap { URLComponents(string: $0)?.host } ?? "Отдельная конфигурация").font(.caption).foregroundStyle(.secondary)
+                    Text(profile.presentation.title).font(.headline).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+                    Text(profile.providerTitle ?? "Отдельная конфигурация").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 Menu {
                     Button { details = profile } label: { Label("О конфигурации", systemImage: "info.circle") }
                     Button(role: .destructive) { pendingDelete = profile; deletePresented = true } label: { Label("Удалить", systemImage: "trash") }.disabled(xray.hasActiveConnection)
                 } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("Действия с профилем \(profile.name)")
+            }
+            if profile.presentation.country != nil || profile.providerGroup != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let country = profile.presentation.country { Label(country, systemImage: "globe.europe.africa").font(.caption).foregroundStyle(.secondary) }
+                    if let group = profile.providerGroup { Text(group).font(.caption.weight(.medium)).foregroundStyle(BlinkTheme.accent) }
+                }
             }
             ViewThatFits(in: .horizontal) {
                 HStack { BlinkPill(title: info.title); BlinkPill(title: "Напрямую", symbol: "arrow.right") }
@@ -209,14 +219,16 @@ struct UniversalProfilesView: View {
             do {
                 let text: String
                 let subscriptionURL: String?
+                let metadata: SubscriptionMetadata?
                 switch try ProfileImportInput.parse(source) {
                 case .subscription(let url):
                     subscriptionURL = url
-                    let data = try await SecureSubscriptionHTTP().fetch(url)
-                    guard let value = String(data: data, encoding: .utf8) else { throw UniversalProfileError.invalid }
+                    let document = try await SecureSubscriptionHTTP().fetchDocument(url)
+                    metadata = document.metadata
+                    guard let value = String(data: document.data, encoding: .utf8) else { throw UniversalProfileError.invalid }
                     text = value
                 case .configuration(let value):
-                    subscriptionURL = nil; text = value
+                    subscriptionURL = nil; metadata = nil; text = value
                 }
                 responseBytes = Int64(text.utf8.count)
                 stage = 2
@@ -229,7 +241,7 @@ struct UniversalProfilesView: View {
                 try Task.checkCancellation()
                 guard importID == id else { return }
                 stage = 3; importedCount = Int64(added.count); rejectedCount = Int64(rejected)
-                if let url = subscriptionURL { for i in added.indices { added[i].subscriptionURL = url } }
+                if let url = subscriptionURL { for i in added.indices { added[i].subscriptionURL = url; added[i].subscriptionMetadata = metadata } }
                 let retained = subscriptionURL.map { url in profiles.filter { $0.subscriptionURL != url } } ?? profiles
                 guard retained.count + added.count <= 1024 else { throw UniversalProfileError.invalid }
                 let next = retained + added; let data = try JSONEncoder().encode(next)

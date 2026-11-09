@@ -24,6 +24,7 @@ ios_overrides = {Path(p) for p in (
     'vkturn/captcha.go', 'vkturn/client.go', 'vkturn/credentials.go',
     'vkturn/transport.go', 'vkturn/turn_transport_test.go',
     'vkturn/direct.go', 'vkturn/transport_metrics.go',
+    'mobile/vkturn.go', 'vkturn/tuning.go', 'vkturn/tuning_test.go', 'vkturn/UPSTREAM.md',
 )}
 files = [Path('go.mod'), Path('go.sum'), Path('LICENSE')]
 for folder in ('mobile', 'vkturn', 'share', 'resources'):

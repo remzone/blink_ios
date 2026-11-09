@@ -2,6 +2,7 @@
 package vkturn
 
 import (
+	"bytes"
 	"context"
 	"github.com/pion/dtls/v3"
 	"github.com/pion/dtls/v3/pkg/crypto/selfsign"
@@ -19,7 +20,7 @@ import (
 )
 
 func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
-	for _, network := range []string{"tcp", "udp", "auto-udp", "auto-tcp"} {
+	for _, network := range []string{"tcp", "udp", "auto-udp", "auto-tcp", "balanced-udp", "conservative-tcp", "custom-udp"} {
 		t.Run(network, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
@@ -29,7 +30,7 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 			}, LoggerFactory: logger}
 			generator := &turn.RelayAddressGeneratorStatic{RelayAddress: net.IPv4(127, 0, 0, 1), Address: "127.0.0.1"}
 			var addr string
-			if strings.TrimPrefix(network, "auto-") == "udp" {
+			if strings.HasSuffix(network, "udp") {
 				socket, e := net.ListenPacket("udp4", "127.0.0.1:0")
 				if e != nil {
 					t.Fatal(e)
@@ -95,7 +96,7 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 					return
 				}
 				defer stream.Close()
-				b := make([]byte, 5)
+				b := make([]byte, 32768)
 				for round := 0; round < 4; round++ {
 					if _, e = io.ReadFull(stream, b); e != nil {
 						done <- e
@@ -119,7 +120,17 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 			if strings.HasPrefix(mode, "auto-") {
 				mode = "auto"
 			}
-			c := &Client{config: Config{TURNTransport: mode}, resolver: net.DefaultResolver, dialer: &net.Dialer{Timeout: time.Second, Control: func(_, _ string, raw syscall.RawConn) error { return raw.Control(func(uintptr) { protected.Add(1) }) }}}
+			tuning := Tuning{}
+			if parts := strings.SplitN(network, "-", 2); len(parts) == 2 && parts[0] != "auto" {
+				mode = parts[1]
+				tuning = Tuning{Preset: parts[0], MTU: 1008, PaceKiB: 128}
+				if tuning.Preset == "custom" {
+					tuning.Window = 32
+					tuning.IntervalMS = 30
+					tuning.Congestion = true
+				}
+			}
+			c := &Client{config: Config{TURNTransport: mode, Tuning: tuning}, resolver: net.DefaultResolver, dialer: &net.Dialer{Timeout: time.Second, Control: func(_, _ string, raw syscall.RawConn) error { return raw.Control(func(uintptr) { protected.Add(1) }) }}}
 			mux, cleanup, e := c.createSessionWithCredentials(ctx, peer.Addr().(*net.UDPAddr), "fixture", "fixture-password", addr)
 			if e != nil {
 				t.Fatal(e)
@@ -132,14 +143,14 @@ func TestTURNTransportsProtectedDTLSSmux(t *testing.T) {
 			defer stream.Close()
 			for round := 0; round < 4; round++ {
 				stream.SetDeadline(time.Now().Add(4 * time.Second))
-				if _, e = stream.Write([]byte("hello")); e != nil {
+				if _, e = stream.Write(bytes.Repeat([]byte{0x5a}, 32768)); e != nil {
 					t.Fatal(e)
 				}
-				b := make([]byte, 5)
+				b := make([]byte, 32768)
 				if _, e = io.ReadFull(stream, b); e != nil {
 					t.Fatal(e)
 				}
-				if string(b) != "hello" {
+				if !bytes.Equal(b, bytes.Repeat([]byte{0x5a}, 32768)) {
 					t.Fatal("invalid relay payload")
 				}
 				if round < 3 {

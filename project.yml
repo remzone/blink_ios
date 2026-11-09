@@ -85,6 +85,7 @@ targets:
       - path: Blink/Diagnostics
       - path: Blink/Models/XrayProfile.swift
       - path: Blink/Models/UniversalProfile.swift
+      - path: Blink/Models/SubscriptionMetadata.swift
       - path: Blink/Models/SharedConstants.swift
       - path: Blink/Storage/SecretStore.swift
       - path: Blink/Storage/NativeResources.swift

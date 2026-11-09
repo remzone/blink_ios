@@ -16,6 +16,11 @@ These files require manual review/merge when the Android mirror changes:
 - `vkturn/turn_transport_test.go`: sustained echo fixture; keeps the mock peer alive
   until the client reads the queued smux response, avoiding teardown-induced EOF.
 
-Wire framing, server authentication, cryptography and profile options are unchanged.
+- `mobile/vkturn.go`, `vkturn/tuning.go`, `vkturn/tuning_test.go`: iOS advanced
+  options (manual TURN address, KCP presets/MTU/window/congestion and cancelable
+  per-allocation upload pacing). Optional fields keep old profiles compatible.
+
+Wire framing, server authentication and cryptography are unchanged. The original
+KCP settings remain the default; advanced tuning changes only local behavior.
 New gomobile exports require rebuilding BlinkCore (`make prepare`). See
 [`docs/DIAGNOSTICS.md`](../docs/DIAGNOSTICS.md) for delivery limits and device validation.

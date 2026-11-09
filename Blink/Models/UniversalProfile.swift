@@ -8,6 +8,14 @@ struct UniversalProfile: Codable, Identifiable, Sendable {
     var kind: String
     var source: String
     var subscriptionURL: String?
+    var subscriptionMetadata: SubscriptionMetadata?
+    var presentation: ProfilePresentation { ProfilePresentation(name: name) }
+    var providerTitle: String? { subscriptionMetadata?.title ?? subscriptionURL.flatMap { URLComponents(string: $0)?.host } }
+    var providerGroup: String? {
+        guard let components = URLComponents(string: source),
+              let group = components.queryItems?.first(where: { $0.name == "x-durev-block" })?.value else { return nil }
+        return ["regular": "Основные", "whitelist": "Белые списки", "autoloca": "Автовыбор", "torrent": "Торренты", "warp": "WARP", "russian": "Россия"][group]
+    }
     init(name: String, kind: String, source: String) { self.name = name; self.kind = kind; self.source = source }
     static func imported(_ text: String) throws -> ([UniversalProfile], Int, String) {
         try NativeResources.prepare()

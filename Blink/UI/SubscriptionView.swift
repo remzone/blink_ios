@@ -4,8 +4,7 @@ import SwiftUI
 struct SubscriptionView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var xray: XrayVPNController
-    @AppStorage("vokop.turnTransport.v2") private var transport = "auto"
-    @AppStorage("vokop.bootstrapDNS") private var bootstrapDNS = "1.1.1.1"
+    @State private var connectionOptions = VKConnectionOptions.load()
     @State private var link = ""
     @State private var document: VokopSubscription?
     @State private var message: String?
@@ -18,7 +17,6 @@ struct SubscriptionView: View {
 
     @State private var confirmForget = false
 
-    @State private var advanced = false
     @State private var guidePresented = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var textSize
@@ -58,6 +56,7 @@ struct SubscriptionView: View {
         .animation(reduceMotion ? nil : BlinkTheme.spring, value: xray.authorizationPhase)
         .confirmationDialog("Забыть подписку Vokop?", isPresented: $confirmForget, titleVisibility: .visible) { Button("Забыть подписку", role: .destructive) { forget() }; Button("Оставить", role: .cancel) {} }
         .onAppear {
+            connectionOptions = .load()
             guard link.isEmpty else { return }
             do {
                 let saved = try container.secretStore.read(profileID: credentialID, kind: .subscriptionURL) ?? ""
@@ -72,7 +71,6 @@ struct SubscriptionView: View {
         }
         .onDisappear {
             requestID = UUID(); task?.cancel(); task = nil; loading = false
-            document = nil; link = ""; lastURL = ""
         }
     }
 
@@ -97,16 +95,12 @@ struct SubscriptionView: View {
             Button { refresh() } label: { Label(loading ? "Загружаем серверы…" : document == nil ? "Загрузить серверы" : "Обновить серверы", systemImage: "arrow.clockwise") }
                 .buttonStyle(BlinkActionStyle(prominent: true, color: Color(red: 0.75, green: 0.78, blue: 1))).disabled(loading || link.isEmpty)
             if loading { ProgressView().frame(maxWidth: .infinity) }
-            DisclosureGroup("Параметры подключения", isExpanded: $advanced) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Транспорт до VK").font(.caption).foregroundStyle(.secondary)
-                    Picker("Транспорт до VK", selection: $transport) { Text("Авто").tag("auto"); Text("UDP").tag("udp"); Text("TCP").tag("tcp") }.pickerStyle(.segmented)
-                    Text("Авто проверяет UDP и TCP, предпочитая UDP для меньшей задержки. TCP остаётся резервным вариантом, если UDP недоступен.").font(.caption).foregroundStyle(.secondary)
-                    TextField("DNS для авторизации VK", text: $bootstrapDNS).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .padding(12).background(BlinkTheme.background, in: RoundedRectangle(cornerRadius: 12))
-                    Text("Этот DNS используется до подключения VPN. Нужен IP-адрес резолвера.").font(.caption).foregroundStyle(.secondary)
-                }.padding(.top, 14).disabled(xray.hasActiveConnection)
+            NavigationLink { VKAdvancedSettingsView() } label: {
+                Label("Параметры подключения VK", systemImage: "slider.horizontal.3")
             }.font(.subheadline)
+            Text("\(connectionOptions.transport == "auto" ? "Авто UDP/TCP" : connectionOptions.transport.uppercased()) · \(connectionOptions.presetTitle) · \(connectionOptions.connections == 0 ? "Соединения из подписки" : "Соединений: \(connectionOptions.connections)")")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
         }.blinkCard()
     }
     private func subscriptionSummary(_ document: VokopSubscription) -> some View {
@@ -123,16 +117,17 @@ struct SubscriptionView: View {
     private func vkProfileCard(_ profile: VokopSubscription.Profile, document: VokopSubscription) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                BlinkBadge(symbol: "server.rack", color: BlinkTheme.vk)
-                Text(profile.name.isEmpty ? profile.id : profile.name).font(.headline).fixedSize(horizontal: false, vertical: true)
+                ProfileEmojiBadge(presentation: ProfilePresentation(name: profile.name), fallback: "server.rack", color: BlinkTheme.vk)
+                Text(ProfilePresentation(name: profile.name.isEmpty ? profile.id : profile.name).title).font(.headline).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             ViewThatFits(in: .horizontal) {
                 HStack { BlinkPill(title: "Через VK", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: "VLESS", color: BlinkTheme.vk) }
                 VStack(alignment: .leading) { BlinkPill(title: "Через VK", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: "VLESS", color: BlinkTheme.vk) }
             }
+            if let country = ProfilePresentation(name: profile.name).country { Label(country, systemImage: "globe.europe.africa").font(.caption).foregroundStyle(.secondary) }
             Text("Авторизация VK → VK TURN → VPN-сервер").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button { Task { await xray.connect(profile: profile, expiresAt: document.expires_at, dnsServer: bootstrapDNS, transport: transport, secrets: container.secretStore, diagnosticURL: lastURL) } } label: {
+            Button { Task { await xray.connect(profile: profile, expiresAt: document.expires_at, secrets: container.secretStore, diagnosticURL: lastURL) } } label: {
                 Label("Подключить через VK", systemImage: "power")
             }.buttonStyle(BlinkActionStyle(prominent: true, color: Color(red: 0.75, green: 0.78, blue: 1))).disabled(xray.hasActiveConnection)
         }.frame(maxWidth: .infinity, alignment: .leading).blinkCard()

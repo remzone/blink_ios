@@ -35,12 +35,13 @@ func (c *Client) createDirectSession(ctx context.Context, peer *net.UDPAddr) (*s
 		cleanupSocket()
 		return nil, nil, errors.New("DTLS handshake failed")
 	}
-	kcp, err := tcputil.NewKCPOverDTLS(dc, false)
+	kcp, err := tcputil.NewKCPOverDTLS(c.config.Tuning.paced(ctx, dc), false)
 	if err != nil {
 		_ = dc.Close()
 		cleanupSocket()
 		return nil, nil, errors.New("KCP initialization failed")
 	}
+	c.config.Tuning.apply(kcp)
 	session, err := smux.Client(kcp, tcputil.DefaultSmuxConfig())
 	if err != nil {
 		_ = kcp.Close()

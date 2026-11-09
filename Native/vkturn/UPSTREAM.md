@@ -16,6 +16,21 @@ unchanged *public upstream application constants*, not a user's account,
 Bot API, subscription or server administration credentials. Acquired dynamic
 VK tokens and TURN passwords remain memory-only and are never logged.
 
+## Local iOS tuning (2026-11-09)
+
+`tcputil.go` still contains the pinned upstream setup. `tuning.go` applies opt-in
+client overrides after session creation: smaller windows/congestion control,
+KCP MTU and cancelable per-allocation uplink pacing. Empty/default options retain
+the original 256/256, NoDelay(1,20,2,1), MTU1200 configuration. A validated
+`Config.TURNServer` overrides the resolved relay address without changing the
+credential provider. Wire framing and the server binary are unchanged.
+
+The UI/settings comparison was reviewed against `anton48/vk-turn-proxy-ios`
+commit `a41bd5628a8bdbdc6ff7e3d794fb76d97ea08871`, notably docs/setup.md and
+AdvancedView.swift. Its SRTP/WRAP/csqtt modes are not interchangeable with this
+VLESS server. No source files were imported from that implementation. See
+[transport tuning](../../docs/TRANSPORT-TUNING.md) for CLI equivalents and limits.
+
 ## API and lifecycle
 
 `Start(context, Config, protector)` creates only a loopback listener immediately.

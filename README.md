@@ -35,6 +35,10 @@ With Libraries** у обоих targets — `Blink` и `BlinkXrayTunnel`.
 
 ## Профили и подписки
 
+В iOS доступны [расширенные параметры VK и метаданные подписок](docs/TRANSPORT-TUNING.md):
+ручной TURN, UDP/TCP/Авто, число соединений, KCP-пресеты/MTU и pacing;
+крупные эмодзи/страны, названия провайдеров, сведения о трафике и сроках.
+
 Служебные метки `x-durev-block`, `x-durev-prio`, `x-durev-sni-change`
 не мешают импорту: параметры подключения и исходный SNI сохраняются.
 Явные `mux=true/false` и `muxConcurrency` применяются; `concurrency` служит

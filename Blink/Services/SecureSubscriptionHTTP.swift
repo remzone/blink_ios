@@ -18,6 +18,11 @@ final class SecureSubscriptionHTTP: NSObject, URLSessionTaskDelegate {
     // Some subscription APIs negotiate JSON renderers before returning a plain/base64 feed.
     // Let the endpoint select its representation; ImportProfiles validates the actual body.
     func fetch(_ value: String, accept: String = "*/*") async throws -> Data {
+        try await fetchDocument(value, accept: accept).data
+    }
+
+    struct Document: Sendable { let data: Data; let metadata: SubscriptionMetadata }
+    func fetchDocument(_ value: String, accept: String = "*/*") async throws -> Document {
         let url = try Self.validatedURL(value)
         let diagnostics = await MainActor.run { DiagnosticCenter.shared.recorder }
         diagnostics.record("subscription.fetch")
@@ -46,7 +51,11 @@ final class SecureSubscriptionHTTP: NSObject, URLSessionTaskDelegate {
                 guard data.count < Self.maximumBytes else { throw SubscriptionError.responseTooLarge }
                 data.append(byte)
             }
-            return data
+            var headers: [String: String] = [:]
+            for key in ["profile-title", "announce", "subscription-userinfo"] {
+                headers[key] = http.value(forHTTPHeaderField: key)
+            }
+            return Document(data: data, metadata: SubscriptionMetadata.parse(headers: headers, body: data))
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as SubscriptionError {

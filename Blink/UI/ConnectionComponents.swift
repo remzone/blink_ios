@@ -139,9 +139,9 @@ struct ProfileDetailsView: View {
             List {
                 Section {
                     HStack(spacing: 14) {
-                        BlinkBadge(symbol: info.symbol)
+                        ProfileEmojiBadge(presentation: profile.presentation, fallback: info.symbol)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(profile.name).font(.headline)
+                            Text(profile.presentation.title).font(.headline)
                             Text(info.title).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 8)
@@ -151,7 +151,12 @@ struct ProfileDetailsView: View {
                     LabeledContent("Режим", value: "Обычный VPN")
                     LabeledContent("Семейство", value: info.family)
                     LabeledContent("VK и CAPTCHA", value: "Не используются")
-                    LabeledContent("Источник", value: profile.subscriptionURL.flatMap { URLComponents(string: $0)?.host } ?? "Отдельная конфигурация")
+                    LabeledContent("Источник", value: profile.providerTitle ?? "Отдельная конфигурация")
+                    if let country = profile.presentation.country { LabeledContent("Страна из названия", value: country) }
+                    if let group = profile.providerGroup { LabeledContent("Группа провайдера", value: group) }
+                }
+                if profile.subscriptionMetadata != nil {
+                    Section("Сведения о подписке") { SubscriptionMetadataSummary(metadata: profile.subscriptionMetadata) }
                 }
                 Section {
                     Text("Режим подключения и протокол — разные вещи. Этот профиль подключается к серверу напрямую. Для маршрута через VK нужна подписка Vokop в разделе «Через VK».")

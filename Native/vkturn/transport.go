@@ -138,11 +138,12 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 		return nil, nil, errors.New("DTLS handshake failed")
 	}
 	diagnosticStage("native.vk.dtls_ready", 5)
-	kcp, err := tcputil.NewKCPOverDTLS(dtlsConn, false)
+	kcp, err := tcputil.NewKCPOverDTLS(c.config.Tuning.paced(ctx, dtlsConn), false)
 	if err != nil {
 		return nil, nil, errors.New("KCP creation failed")
 	}
 	closers = append(closers, func() { _ = kcp.Close() })
+	c.config.Tuning.apply(kcp)
 	session, err := smux.Client(kcp, tcputil.DefaultSmuxConfig())
 	if err != nil {
 		return nil, nil, errors.New("smux creation failed")
