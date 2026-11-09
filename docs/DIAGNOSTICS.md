@@ -102,7 +102,7 @@ report iOS и не может гарантировать доставку пос
 3 Allocate, 4 DTLS setup, 5 DTLS handshake, 6 KCP, 7 smux, 8 DNS.
 Для `native.xray.error stage`: 0 неизвестно, 1 DNS, 2 timeout, 3 неизвестный
 корневой сертификат, 4 refused, 5 reset, 6 EOF/closed. severity в errorCode:
-1 error, 2 warning. Исходная строка ошибки намеренно отсутствует.
+1 error, 2 warning, 3 Info с типизированной причиной ошибки. Исходная строка ошибки намеренно отсутствует.
 `provider.error errorDomain`: 1 URLSession, 2 NEVPNConnection, 3 BlinkVPN,
 4 POSIX, 5 CFNetwork, 6 Blink.VK, 7 NEVPN, 8 Cocoa, 9 Keychain; 0 неизвестный домен.
 

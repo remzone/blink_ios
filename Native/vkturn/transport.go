@@ -132,7 +132,9 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 	defer cancel()
 	diagnosticStage("native.vk.dtls_begin", 4)
 	if err = dtlsConn.HandshakeContext(handshakeCtx); err != nil {
-		diagnosticStage("native.vk.dtls_failed", 4)
+		if ctx.Err() == nil {
+			diagnosticStage("native.vk.dtls_failed", 4)
+		}
 		return nil, nil, errors.New("DTLS handshake failed")
 	}
 	diagnosticStage("native.vk.dtls_ready", 5)
