@@ -11,9 +11,10 @@ root = Path(__file__).resolve().parents[1]
 project = yaml.safe_load((root / 'project.yml').read_text())
 assert {'path': 'fixtures', 'buildPhase': 'resources'} in project['targets']['BlinkTests']['sources']
 new = project['targets']['BlinkXrayTunnel']
-assert new['dependencies'] == [{'framework': 'Native/dist/BlinkCore.xcframework', 'embed': False}]
+assert new['dependencies'] == [{'framework': 'Native/dist/BlinkCore.xcframework', 'embed': False}, {'sdk': 'libresolv.tbd'}]
 app = project['targets']['Blink']
 assert {'framework': 'Native/dist/BlinkCore.xcframework', 'embed': False} in app['dependencies']
+assert {'sdk': 'libresolv.tbd'} in app['dependencies']
 assert 'BlinkPacketTunnel' not in project['targets'], 'legacy multiple Go runtime target must stay retired'
 assert project['settings']['base']['TARGETED_DEVICE_FAMILY'] == '1,2'
 assert len([d for d in app['dependencies'] if 'framework' in d]) == 1

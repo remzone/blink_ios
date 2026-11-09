@@ -30,6 +30,8 @@ iPad) и Apple Vision (Designed for iPad). Это параметры совме�
 Версия и номер сборки заданы один раз на уровне проекта и наследуются приложением
 и Network Extension. В TestFlight workflow номер сборки автоматически заменяется
 на номер запуска GitHub Actions; версия берётся из `project.yml`.
+Системная библиотека `libresolv.tbd` автоматически добавляется в **Link Binary
+With Libraries** у обоих targets — `Blink` и `BlinkXrayTunnel`.
 
 ## Профили и подписки
 

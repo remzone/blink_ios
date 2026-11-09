@@ -37,6 +37,7 @@ targets:
     dependencies:
       - framework: Native/dist/BlinkCore.xcframework
         embed: false
+      - sdk: libresolv.tbd
       - package: VKCaptchaSDK
         product: VKCaptchaSDK
       - target: BlinkXrayTunnel
@@ -90,6 +91,7 @@ targets:
     dependencies:
       - framework: Native/dist/BlinkCore.xcframework
         embed: false
+      - sdk: libresolv.tbd
     entitlements:
       path: Blink/Config/BlinkXrayTunnel.entitlements
       properties:
