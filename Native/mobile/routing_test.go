@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	xnet "github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/features/routing"
+	routing_session "github.com/xtls/xray-core/features/routing/session"
 	"github.com/xtls/xray-core/proxy/tun"
 	"golang.org/x/net/dns/dnsmessage"
 	"io"
@@ -224,5 +228,40 @@ func TestSelectiveRoutingFakeDNSAndProtectedDirect(t *testing.T) {
 	n, _, e = udp.ReadFrom(b)
 	if e != nil || string(b[:n]) != "direct-udp" {
 		t.Fatal("UDP default did not go directly", e)
+	}
+}
+
+// Test the real engine router: a direct IP exception wins even when the same
+// hostname is explicitly included in the VPN domain list. Static DNS avoids
+// external lookups and ensures the router does not classify a FakeDNS answer.
+func TestSelectiveRoutingDirectIPOverridesDomain(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	raw, err := buildConfig(testProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &RoutingPolicy{Schema: "blink.routing.v1", Mode: "selected", Revision: 1, Domains: []string{"vpn.example"}, ExcludeIPs: []string{"203.0.113.0/24"}}
+	cfg, opt, err := splitConfig(raw, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	json.Unmarshal(cfg, &doc)
+	doc["dns"].(map[string]any)["hosts"] = map[string]any{"media.vpn.example": "203.0.113.7"}
+	cfg, _ = json.Marshal(doc)
+	engine, err := startConfigOptions(cfg, &channelWriter{ctx: ctx, packets: make(chan []byte, 32)}, &allowWG{}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Stop()
+	router := engine.instance.GetFeature(routing.RouterType()).(routing.Router)
+	request := session.ContextWithOutbounds(ctx, []*session.Outbound{{Target: xnet.TCPDestination(xnet.DomainAddress("media.vpn.example"), 443)}})
+	result, err := router.PickRoute(routing_session.AsRoutingContext(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GetOutboundTag() != "blink-direct" {
+		t.Fatal("IP exclusion lost to included domain", result.GetOutboundTag())
 	}
 }
