@@ -133,11 +133,11 @@ func (c *Client) maintainPackets(id int) {
 		}
 		var rtt atomic.Int64
 		rtt.Store(probeRTT(initial[:12]))
-		mode := int64(3)
+		mode := int64(4)
 		if c.config.Protocol == "srtp" {
-			mode = 4
-		} else if c.config.Protocol == "wrap" {
 			mode = 5
+		} else if c.config.Protocol == "wrap" {
+			mode = 6
 		}
 		var tx, rx, out, in atomic.Int64
 		c.mu.Lock()
