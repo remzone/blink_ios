@@ -47,7 +47,7 @@ def check_subscription_contract(view, model, client):
     """Narrow cross-file API guard, not general Swift name/type checking."""
     stored = re.search(r'struct SavedVokopSubscription[^{}]*\{([^{}]*)\}', model)
     assert stored, 'SavedVokopSubscription declaration missing'
-    fields = set(re.findall(r'\blet\s+(\w+)\s*:', stored.group(1)))
+    fields = set(re.findall(r'\b(?:let|var)\s+(\w+)\s*:', stored.group(1)))
     members = set(re.findall(r'\bstate\.(\w+)', view))
     assert members <= fields, f'SubscriptionView references unknown saved members: {members - fields}'
     for initializer in re.findall(r'SavedVokopSubscription\(([^()]*?)\)', view):

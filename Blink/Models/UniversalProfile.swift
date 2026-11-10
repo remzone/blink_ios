@@ -7,6 +7,7 @@ struct UniversalProfile: Codable, Identifiable, Sendable {
     var name: String
     var kind: String
     var source: String
+    var managedByPanel: String?
     var subscriptionURL: String?
     var subscriptionMetadata: SubscriptionMetadata?
     var presentation: ProfilePresentation { ProfilePresentation(name: name) }

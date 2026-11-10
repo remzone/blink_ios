@@ -9,6 +9,11 @@ struct LogsView: View {
     @EnvironmentObject private var xray: XrayVPNController
     var body: some View {
         List {
+            Section("Запись журнала") {
+                Toggle("Собирать диагностический журнал", isOn: Binding(get: { diagnostics.collectionEnabled }, set: { diagnostics.setCollectionEnabled($0) }))
+                Text(diagnostics.collectionEnabled ? "Записываются только технические события. Отправка — вручную." : "Новые события приложения и туннеля не сохраняются. Ранее записанный журнал можно отправить или удалить.").font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Доставка на сервер") {
                 Text("Записи хранятся на устройстве. Передача выполняется только по кнопке, без фоновых отправок.").font(.caption).foregroundStyle(.secondary)
                 LabeledContent("Сессия") { Text(diagnostics.sessionID).font(.caption.monospaced()).textSelection(.enabled) }
@@ -50,7 +55,7 @@ struct LogsView: View {
             Button("Удалить журнал", role: .destructive) { guard !sending, !diagnostics.sending, !xray.hasActiveConnection else { return }; diagnostics.resetLocal() }
             Button("Отмена", role: .cancel) {}
         }.navigationTitle("Диагностика и журналы").navigationBarTitleDisplayMode(.inline).blinkScreen()
-            .task { await diagnostics.flushNow() }
+
             .onDisappear { link = "" }
     }
 }

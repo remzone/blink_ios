@@ -17,7 +17,10 @@ final class DiagnosticCenter: ObservableObject {
     private var userStopped = false
     private var foreground = true
     private var foregroundGeneration = UUID()
+    @Published private(set) var collectionEnabled = DiagnosticStore.collectionEnabled
+    func setCollectionEnabled(_ enabled: Bool) { DiagnosticStore.collectionEnabled = enabled; collectionEnabled = enabled; MobileSetDiagnosticCollection(enabled) }
     init() {
+        MobileSetDiagnosticCollection(DiagnosticStore.collectionEnabled)
         let recorder = DiagnosticRecorder(); self.recorder = recorder; sessionID = recorder.session.id
         recorder.record("app.launch", fields: DiagnosticStore.memory().merging(["sharedStorage": DiagnosticStore.sharedContainerAvailable ? 1 : 0]) { _, new in new }, critical: true)
     }
@@ -25,10 +28,14 @@ final class DiagnosticCenter: ObservableObject {
         guard loop == nil else { return }
         DiagnosticStore.prune()
         loop = Task { [weak self] in
+            var initialSnapshot = true
             while !Task.isCancelled {
                 guard let self else { return }
+                if initialSnapshot || self.collectionEnabled {
+                initialSnapshot = false
                 let snapshot = await Task.detached(priority: .utility) { (DiagnosticStore.pendingCount(), DiagnosticStore.allEvents()) }.value
                 self.pendingCount = snapshot.0; self.events = snapshot.1
+                }
                 let scheduled = Date(), revision = self.foregroundGeneration
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
                 let delay = Int64(max(0, (Date().timeIntervalSince(scheduled) - 5) * 1000))

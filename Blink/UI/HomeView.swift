@@ -220,8 +220,9 @@ struct HomeView: View {
                         let current = try JSONDecoder().decode(SavedVokopSubscription.self, from: Data(raw.utf8))
                         guard current.url == state.url, current.highestRevision <= document.revision else { return }
                     } else { return }
+                    vpnProfiles = try ManagedSubscriptionStore.apply(document, url: state.url, store: container.secretStore)
                     turnDocument = document
-                    let updated = SavedVokopSubscription(url: state.url, highestRevision: document.revision, document: document)
+                    let updated = SavedVokopSubscription(url: state.url, highestRevision: document.revision, document: document, updatedAt: Date())
                     try container.secretStore.save(String(decoding: try JSONEncoder().encode(updated), as: UTF8.self), profileID: credentialID, kind: .subscriptionURL)
                 } catch SubscriptionError.accessDenied { turnDocument = nil } catch { }
             } else { turnURL = ""; turnDocument = nil; account = nil }
@@ -231,7 +232,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 16) {
             BlinkSectionHeading(title: "Как подключаться")
             routeCard(.direct, detail: "Ваш сервер и привычные конфигурации. Без TURN и CAPTCHA.")
-            routeCard(.vk, detail: "Альтернативный маршрут с подпиской Vokop и проверкой VK.")
+            routeCard(.vk, detail: "Альтернативный маршрут с подпиской Vokop и проверкой TURN.")
             Button { navigation.tab = .diagnostics } label: {
                 BlinkDestination(title: "Проверить соединение", subtitle: "Ваш IP и доступ к сервисам", symbol: "waveform.path.ecg")
             }.buttonStyle(.plain).blinkCard()

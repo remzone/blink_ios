@@ -29,3 +29,5 @@ func RuntimeStatsJSON() string {
 func DrainDiagnosticEventsJSON() string { return vkturn.DrainDiagnosticsJSON() }
 
 func SetDiagnosticSession(id string) bool { return vkturn.SetDiagnosticSession(id) }
+
+func SetDiagnosticCollection(enabled bool) { vkturn.SetDiagnosticCollection(enabled) }

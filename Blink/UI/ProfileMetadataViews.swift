@@ -23,6 +23,7 @@ struct SubscriptionMetadataSummary: View {
                 if let expiry = metadata.expiresAt {
                     Label("До \(Date(timeIntervalSince1970: TimeInterval(expiry)).formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar").font(.caption).foregroundStyle(.secondary)
                 }
+                if let updatedAt = metadata.updatedAt { Label("Обновлено " + updatedAt.formatted(date: .abbreviated, time: .shortened), systemImage: "arrow.clockwise").font(.caption).foregroundStyle(.secondary) }
                 if let announcement = metadata.announcement { Text(announcement).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             }
         }

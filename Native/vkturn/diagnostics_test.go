@@ -43,3 +43,20 @@ func TestDiagnosticFailureNeverExportsErrorText(t *testing.T) {
 		t.Fatal("secret leaked")
 	}
 }
+
+func TestDiagnosticCollectionCanStopAndResume(t *testing.T) {
+	SetDiagnosticCollection(true)
+	defer SetDiagnosticCollection(true)
+	DrainDiagnosticsJSON()
+	RecordDiagnostic("connection.begin", nil)
+	SetDiagnosticCollection(false)
+	RecordDiagnostic("connection.begin", nil)
+	if got := DrainDiagnosticsJSON(); got != "[]" {
+		t.Fatal("disabled collector retained events", got)
+	}
+	SetDiagnosticCollection(true)
+	RecordDiagnostic("connection.begin", nil)
+	if got := DrainDiagnosticsJSON(); got == "[]" {
+		t.Fatal("collector did not resume")
+	}
+}

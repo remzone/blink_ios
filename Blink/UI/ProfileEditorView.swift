@@ -56,7 +56,7 @@ struct ProfileEditorView: View {
                 TextField("DNS", text: $profile.wireGuard.dns).textInputAutocapitalization(.never)
             }
             Section("Free TURN") {
-                TextField("VK Call URL", text: $profile.freeTurn.vkLink, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("TURN Call URL", text: $profile.freeTurn.vkLink, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Obfuscation key", text: $secrets.obfuscationKey)
                 TextField("Profile", text: $profile.freeTurn.obfProfile).textInputAutocapitalization(.never)
             }
@@ -97,7 +97,7 @@ struct ProfileEditorView: View {
             guard (1...65535).contains(profile.port) else { throw ValidationError("Port must be between 1 and 65535.") }
             guard Data(base64Encoded: secrets.wireGuardPrivateKey)?.count == 32 else { throw ValidationError("WireGuard private key must be a Base64-encoded 32-byte key.") }
             guard Data(base64Encoded: profile.wireGuard.publicKey)?.count == 32 else { throw ValidationError("Server public key must be a Base64-encoded 32-byte key.") }
-            guard let vkURL = URL(string: profile.freeTurn.vkLink), vkURL.scheme == "https", vkURL.host != nil else { throw ValidationError("Enter a valid HTTPS VK Call URL.") }
+            guard let vkURL = URL(string: profile.freeTurn.vkLink), vkURL.scheme == "https", vkURL.host != nil else { throw ValidationError("Enter a valid HTTPS TURN Call URL.") }
             profile.name = name; profile.server = server
             try container.secretStore.save(secrets.wireGuardPrivateKey, profileID: profile.id, kind: .wireGuardPrivateKey)
             try container.secretStore.save(secrets.obfuscationKey, profileID: profile.id, kind: .obfuscationKey)

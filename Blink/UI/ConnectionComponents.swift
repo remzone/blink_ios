@@ -54,7 +54,7 @@ struct RouteExplainer: View {
                 }.font(.caption.weight(.medium))
                 Text(route == .direct
                      ? "Добавьте конфигурацию своего провайдера. Blink подключится к его серверу без авторизации провайдера."
-                     : "Нужна подписка Vokop. Сначала Blink пройдёт авторизацию VK, затем запустит VPN через TURN.")
+                     : "Нужна подписка Vokop. Сначала Blink пройдёт авторизацию TURN, затем запустит VPN через TURN.")
                     .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
@@ -103,7 +103,7 @@ struct ProtocolGuideView: View {
             List {
                 Section("Два способа подключения") {
                     guide("Обычный VPN", icon: "bolt.shield.fill", color: BlinkTheme.accent, text: "Ваше устройство подключается к серверу из конфигурации. Подходят ссылки VLESS, VMess, Trojan, Shadowsocks, профили WireGuard и другие поддерживаемые форматы.")
-                    guide("Через TURN", icon: "arrow.triangle.branch", color: BlinkTheme.vk, text: "VLESS передаётся через TURN. Для этого режима нужна отдельная подписка Vokop. При подключении VK может попросить CAPTCHA.")
+                    guide("Через TURN", icon: "arrow.triangle.branch", color: BlinkTheme.vk, text: "VLESS передаётся через TURN. Для этого режима нужна отдельная подписка Vokop. При подключении TURN может попросить CAPTCHA.")
                 }
                 Section("Что вы получили от провайдера") {
                     guide("Ссылка на сервер", icon: "link", color: BlinkTheme.accent, text: "Например, vless:// или trojan://. Содержит настройки одного сервера; добавляйте в обычный VPN.")
@@ -182,7 +182,7 @@ struct VKJourneyView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Подключение через TURN").font(.headline)
             step(0, title: "Авторизация TURN", detail: "В обычной сети, до запуска VPN")
-            step(1, title: "Ручная проверка", detail: "Только если VK запросит CAPTCHA")
+            step(1, title: "Ручная проверка", detail: "Только если TURN запросит CAPTCHA")
             step(2, title: "Запуск VPN", detail: xray.isConnected ? "Туннель включён" : "Ожидаем готовности транспорта")
         }.frame(maxWidth: .infinity, alignment: .leading).blinkCard()
     }

@@ -20,11 +20,15 @@ var diagnosticRing struct {
 	sync.Mutex
 	events    []DiagnosticEvent
 	sessionID string
+	disabled  bool
 }
 
 func RecordDiagnostic(event string, fields map[string]int64) {
 	diagnosticRing.Lock()
 	defer diagnosticRing.Unlock()
+	if diagnosticRing.disabled {
+		return
+	}
 	if len(diagnosticRing.events) >= 128 {
 		copy(diagnosticRing.events, diagnosticRing.events[1:])
 		diagnosticRing.events = diagnosticRing.events[:127]
@@ -79,4 +83,14 @@ func SetDiagnosticSession(id string) bool {
 	defer diagnosticRing.Unlock()
 	diagnosticRing.sessionID = id
 	return true
+}
+
+// SetDiagnosticCollection stops allocation and discards queued native events.
+func SetDiagnosticCollection(enabled bool) {
+	diagnosticRing.Lock()
+	defer diagnosticRing.Unlock()
+	diagnosticRing.disabled = !enabled
+	if !enabled {
+		diagnosticRing.events = nil
+	}
 }

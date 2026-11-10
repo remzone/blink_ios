@@ -45,6 +45,15 @@ struct DiagnosticCredential: Codable, Sendable {
 }
 
 enum DiagnosticStore {
+    static var collectionEnabled: Bool {
+        get { !FileManager.default.fileExists(atPath: root.appendingPathComponent("collection-disabled").path) }
+        set {
+            let flag = root.appendingPathComponent("collection-disabled")
+            if newValue { try? FileManager.default.removeItem(at: flag) }
+            else { try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); try? Data().write(to: flag, options: .atomic) }
+        }
+    }
+
     static var sharedContainerAvailable: Bool { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedConstants.appGroup) != nil }
     static var root: URL { SharedConstants.storageDirectory().appendingPathComponent("Diagnostics", isDirectory: true) }
     static func directory(_ id: String) -> URL { root.appendingPathComponent(id, isDirectory: true) }
@@ -121,17 +130,20 @@ final class DiagnosticRecorder: @unchecked Sendable {
         if let data = try? Data(contentsOf: directory.appendingPathComponent("session.json")), let saved = try? JSONDecoder().decode(DiagnosticSession.self, from: data) { session = saved }
         else {
             session = .init(id: sessionID, createdAt: Int64(Date().timeIntervalSince1970), appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1", build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1")
-            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
-            if let data = try? JSONEncoder().encode(session) { try? data.write(to: directory.appendingPathComponent("session.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+            if DiagnosticStore.collectionEnabled { try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+            if let data = try? JSONEncoder().encode(session) { try? data.write(to: directory.appendingPathComponent("session.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) } }
         }
     }
     func record(_ name: String, fields: [String: Int64] = [:], source override: String? = nil, critical: Bool = false, occurredAt: Int64? = nil) {
+        guard DiagnosticStore.collectionEnabled else { return }
         let now = Date().timeIntervalSince1970
         let timeMs = occurredAt ?? Int64(now * 1000)
         let event = DiagnosticEvent(id: UUID().uuidString, occurredAt: timeMs, elapsedMs: max(0, timeMs - session.createdAt * 1000), source: override ?? source, event: name, fields: fields)
         let work: @Sendable () -> Void = { [self] in
-            guard enabled else { return }
+            guard enabled, DiagnosticStore.collectionEnabled else { return }
             let directory = DiagnosticStore.directory(session.id)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: directory.appendingPathComponent("session.json").path), let metadata = try? JSONEncoder().encode(session) { try? metadata.write(to: directory.appendingPathComponent("session.json"), options: .atomic) }
             guard let data = try? JSONEncoder().encode(event), data.count <= 8192 else { return }
             let url = directory.appendingPathComponent(String(format: "%016lld", event.occurredAt) + "-" + event.id + ".event.json")
             do { try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) } catch { logger.error("Diagnostic journal write failed") }
@@ -149,7 +161,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
     func marker(_ active: Bool) {
         let directory = DiagnosticStore.directory(session.id)
         let marker = directory.appendingPathComponent("tunnel-active")
-        if active { try? Data().write(to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+        if active && DiagnosticStore.collectionEnabled { try? Data().write(to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
         else { try? FileManager.default.removeItem(at: marker) }
     }
 }

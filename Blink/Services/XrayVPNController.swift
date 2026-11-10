@@ -83,7 +83,7 @@ final class XrayVPNController: ObservableObject {
         let id = UUID(); operation = id; busy = true; errorMessage = nil
         route = .vk; profileName = profile.name; authorizationPhase = .starting
         DiagnosticCenter.shared.begin(sourceURL: diagnosticURL, mode: 1, fields: ["streams": Int64(streams)])
-        status = "Авторизация VK · используется обычная сеть"
+        status = "Авторизация TURN · используется обычная сеть"
         do {
             let existing = try await NETunnelProviderManager.loadAllFromPreferences().first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == SharedConstants.xrayTunnelBundleIdentifier }
             guard operation == id else { return }
@@ -115,10 +115,10 @@ final class XrayVPNController: ObservableObject {
             guard operation == id else { return }
             DiagnosticCenter.shared.record("connection.failed", fields: DiagnosticStore.errorFields(error), critical: true)
             busy = false; status = "Не подключён"
-            if error is CancellationError { errorMessage = "Авторизация VK отменена. Повторите подключение." }
+            if error is CancellationError { errorMessage = "Авторизация TURN отменена. Повторите подключение." }
             else if let error = error as? VKAuthorizationError { errorMessage = error.localizedDescription }
             else if let error = error as? NetworkRequestError { errorMessage = error.localizedDescription }
-            else { errorMessage = "Не удалось подготовить авторизацию VK. Повторите подключение." }
+            else { errorMessage = "Не удалось подготовить авторизацию TURN. Повторите подключение." }
         }
     }
 
@@ -145,7 +145,7 @@ final class XrayVPNController: ObservableObject {
             configuration.excludeLocalNetworks = captureAll
             configuration.providerConfiguration = [SharedConstants.profileIDKey: credentialID.uuidString, "mode": mode, "diagnosticsSessionID": DiagnosticCenter.shared.sessionID]
             manager.protocolConfiguration = configuration
-            manager.localizedDescription = mode == "vkturn" ? "Blink — VK TURN" : "Blink — VPN"
+            manager.localizedDescription = mode == "vkturn" ? "Blink — TURN TURN" : "Blink — VPN"
             manager.isEnabled = true
             try await manager.saveToPreferences()
             guard operation == attempt else { return }
@@ -182,9 +182,9 @@ final class XrayVPNController: ObservableObject {
                               let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                               let engine = object["engine"] else { return }
                         switch engine {
-                        case "ready": self.status = "VPN подключён · VK готов"
-                        case "connecting": self.status = "VPN подключён · восстановление VK"
-                        case "captcha_required": self.status = "VK требует новую проверку. Отключите VPN и подключитесь из приложения."
+                        case "ready": self.status = "VPN подключён · TURN готов"
+                        case "connecting": self.status = "VPN подключён · восстановление TURN"
+                        case "captcha_required": self.status = "TURN требует новую проверку. Отключите VPN и подключитесь из приложения."
                         case "stopped": self.status = "Соединение остановлено. Переподключитесь или обновите подписку."
                         default: self.status = "VPN настроен · доступ в интернет ещё не проверен"
                         }
@@ -204,7 +204,7 @@ final class XrayVPNController: ObservableObject {
             if let configuration = restored?.protocolConfiguration as? NETunnelProviderProtocol {
                 if let sessionID = configuration.providerConfiguration?["diagnosticsSessionID"] as? String { DiagnosticCenter.shared.resume(sessionID: sessionID) }
                 route = ConnectionRoute.fromProviderMode(configuration.providerConfiguration?["mode"] as? String)
-                profileName = route == .vk ? "Подключение через VK" : "Сохранённый VPN-профиль"
+                profileName = route == .vk ? "Подключение через TURN" : "Сохранённый VPN-профиль"
             }
             if let manager {
                 consume(manager.connection.status)

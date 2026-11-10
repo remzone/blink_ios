@@ -43,24 +43,18 @@ struct UniversalProfilesView: View {
             VStack(alignment: .leading, spacing: 22) {
                 BlinkHeader(title: "Ваши подключения", subtitle: "Серверы и подписки, которые всегда под рукой.")
                 RouteExplainer(route: .direct)
-                importHub
+                if profiles.isEmpty { importHub }
+                else {
+                    HStack { Text("Мои подключения").font(.headline); Spacer(); Menu {
+                        Button { importPresented = true } label: { Label("Ссылка или текст", systemImage: "link") }
+                        Button { scannerPresented = true } label: { Label("Сканировать QR", systemImage: "qrcode.viewfinder") }
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) { Label("QR из фото", systemImage: "photo") }
+                        Button { filePresented = true } label: { Label("Из файла", systemImage: "doc") }
+                    } label: { Label("Добавить", systemImage: "plus").font(.subheadline.weight(.semibold)) } }
+                }
                 if importing || readingPhoto { ProgressView(importing ? "Добавляем конфигурацию…" : "Читаем QR-код…").frame(maxWidth: .infinity).padding() }
                 if let message { BlinkNotice(message: message).transition(.opacity) }
                 if xray.hasActiveConnection || xray.errorMessage != nil { ActiveConnectionCard() }
-                if !profiles.isEmpty {
-                    BlinkSectionHeading(title: "Мои серверы", detail: "\(profiles.count)")
-                    Picker("Источник конфигурации", selection: $filter) {
-                        Text("Все").tag(0); Text("Из подписок").tag(1); Text("Отдельные").tag(2)
-                    }.pickerStyle(.segmented)
-                }
-                if profiles.isEmpty {
-                    BlinkEmptyState(symbol: "square.stack.3d.up", title: "Первый сервер — с одной ссылки", detail: "Добавьте конфигурацию провайдера или отсканируйте QR. Здесь появятся ваши подключения.").blinkCard()
-                } else if filtered.isEmpty {
-                    BlinkEmptyState(symbol: "magnifyingglass", title: "Ничего не найдено", detail: "Попробуйте другое название или выберите все источники.").blinkCard()
-                }
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(filtered) { profile in profileCard(profile) }
-                }
                 if !subscriptions.isEmpty {
                     BlinkSectionHeading(title: "Подписки", detail: "\(subscriptions.count)")
                     VStack(spacing: 0) {
@@ -82,6 +76,20 @@ struct UniversalProfilesView: View {
                             }.padding(.vertical, 10)
                         }
                     }.blinkCard()
+                }
+                if !profiles.isEmpty {
+                    BlinkSectionHeading(title: "Мои серверы", detail: "\(profiles.count)")
+                    Picker("Источник конфигурации", selection: $filter) {
+                        Text("Все").tag(0); Text("Из подписок").tag(1); Text("Отдельные").tag(2)
+                    }.pickerStyle(.segmented)
+                }
+                if profiles.isEmpty {
+                    BlinkEmptyState(symbol: "square.stack.3d.up", title: "Первый сервер — с одной ссылки", detail: "Добавьте конфигурацию провайдера или отсканируйте QR. Здесь появятся ваши подключения.").blinkCard()
+                } else if filtered.isEmpty {
+                    BlinkEmptyState(symbol: "magnifyingglass", title: "Ничего не найдено", detail: "Попробуйте другое название или выберите все источники.").blinkCard()
+                }
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(filtered) { profile in profileCard(profile) }
                 }
                 Button { guidePresented = true } label: { Label("Как разобраться в конфигурациях", systemImage: "questionmark.circle").font(.subheadline) }
             }.padding(20).frame(maxWidth: 1050).frame(maxWidth: .infinity)
@@ -224,6 +232,14 @@ struct UniversalProfilesView: View {
                 switch try ProfileImportInput.parse(source) {
                 case .subscription(let url):
                     if (try? VokopSubscriptionClient.validatedURL(url)) != nil {
+                        if profiles.contains(where: { $0.managedByPanel == url }) {
+                            let document = try await VokopSubscriptionClient().fetch(url)
+                            try Task.checkCancellation(); guard importID == id else { return }
+                            profiles = try ManagedSubscriptionStore.apply(document, url: url, store: container.secretStore)
+                            let state = SavedVokopSubscription(url: url, highestRevision: document.revision, document: document, updatedAt: Date())
+                            try container.secretStore.save(String(decoding: try JSONEncoder().encode(state), as: UTF8.self), profileID: UUID(uuidString: "57f8b06a-c211-4b4f-8525-14cb2e7a882e")!, kind: .subscriptionURL)
+                            stage = 4; message = "Подписка VPN и TURN обновлена."; return
+                        }
                         input = ""; importPresented = false
                         navigation.pendingTURNURL = url
                         navigation.openLibrary(.vk)

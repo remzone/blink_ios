@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @State private var botURL: URL?
     @State private var guidePresented = false
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0" }
     private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
@@ -22,6 +23,10 @@ struct SettingsView: View {
                 NavigationLink { RoutingSettingsView() } label: { settingsRow("Маршрутизация", detail: "Правила панели и свои исключения", symbol: "arrow.triangle.branch", color: BlinkTheme.accent) }
                 settingsRow("Параметры из подписки", detail: "Транспорт и протокол задаёт провайдер в панели", symbol: "checkmark.shield.fill", color: BlinkTheme.vk)
             }
+            Section("Моя подписка") {
+                if let botURL { Link(destination: botURL) { settingsRow("Открыть бота", detail: "Подписка, настройки и новый ключ", symbol: "paperplane.fill", color: BlinkTheme.accent) } }
+                else { Text("Ссылка на бота появится из интеграции вашего провайдера.").font(.caption).foregroundStyle(.secondary) }
+            }
             Section("Помощь и диагностика") {
                 Button { guidePresented = true } label: {
                     settingsRow("Режимы и конфигурации", detail: "Обычный VPN, TURN и типы профилей", symbol: "questionmark.circle.fill", color: BlinkTheme.vk)
@@ -40,6 +45,13 @@ struct SettingsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.listStyle(.insetGrouped).blinkScreen().navigationTitle("Настройки").navigationBarTitleDisplayMode(.large)
+            .task {
+                let id = UUID(uuidString: "57f8b06a-c211-4b4f-8525-14cb2e7a882e")!
+                if let raw = try? KeychainSecretStore().read(profileID: id, kind: .subscriptionURL), let state = try? JSONDecoder().decode(SavedVokopSubscription.self, from: Data(raw.utf8)) {
+                    botURL = ManagedSubscriptionStore.botURL(state.document?.bot_url)
+                    if let data = try? await VokopSubscriptionClient.fetchControl(state.url + "/account"), let account = try? JSONDecoder().decode(SubscriptionAccount.self, from: data) { botURL = ManagedSubscriptionStore.botURL(account.bot_url) }
+                }
+            }
             .sheet(isPresented: $guidePresented) { ProtocolGuideView() }
     }
     private func settingsRow(_ title: String, detail: String, symbol: String, color: Color) -> some View {

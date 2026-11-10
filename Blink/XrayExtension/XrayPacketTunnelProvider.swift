@@ -33,6 +33,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             let attempt = UUID(); self.generation = attempt; self.unreadySince = nil; self.pendingStart = completionHandler
             let publicConfig = self.protocolConfiguration as? NETunnelProviderProtocol
             let suppliedID = publicConfig?.providerConfiguration?["diagnosticsSessionID"] as? String
+            MobileSetDiagnosticCollection(DiagnosticStore.collectionEnabled)
             self.diagnostics = DiagnosticRecorder(sessionID: suppliedID.flatMap { UUID(uuidString: $0)?.uuidString } ?? UUID().uuidString, source: "extension")
             _ = MobileSetDiagnosticSession(self.diagnostics!.session.id)
             self.startedAt = Date(); self.heartbeat = 0; self.startupTicks = 0
@@ -77,7 +78,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
                 } else if mode == "vkturn" {
                     self.networkProfile = nil
                     guard var document = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
-                          let handoff = document["bootstrap"] as? String, !handoff.isEmpty else { throw self.safeError("Откройте Blink для авторизации VK.") }
+                          let handoff = document["bootstrap"] as? String, !handoff.isEmpty else { throw self.safeError("Откройте Blink для авторизации TURN.") }
                     if document["backend"] as? String == "wireguard", let source = document["wireguard"] as? String {
                         let prepared = MobileImportProfile(source, &error)
                         guard error == nil else { throw self.safeError("Неверный WG-конфиг в подписке.") }
@@ -91,10 +92,10 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
                     self.diagnostics?.record("extension.profile", fields: ["streams": Int64(document["streams"] as? Int ?? 0)])
                     self.engine = MobileStartVK(raw, self, self.protector, &error)
                 } else { throw self.safeError("Неизвестный режим VPN.") }
-                guard error == nil, self.engine != nil else { throw self.safeError("Не удалось запустить VPN. Проверьте профиль; для VK повторите авторизацию в приложении.") }
+                guard error == nil, self.engine != nil else { throw self.safeError("Не удалось запустить VPN. Проверьте профиль; для TURN повторите авторизацию в приложении.") }
                 self.diagnostics?.record("extension.core_started", fields: DiagnosticStore.memory(), critical: true)
                 self.waitForReady(attempt: attempt, deadline: Date().addingTimeInterval(40))
-            } catch { self.diagnostics?.record("extension.failure", fields: DiagnosticStore.errorFields(error).merging(["stage": startupStage]) { _, new in new }, critical: true); self.failStart(self.safeError("VPN не запущен. Проверьте профиль, сеть и авторизацию VK.")) }
+            } catch { self.diagnostics?.record("extension.failure", fields: DiagnosticStore.errorFields(error).merging(["stage": startupStage]) { _, new in new }, critical: true); self.failStart(self.safeError("VPN не запущен. Проверьте профиль, сеть и авторизацию TURN.")) }
         }
     }
     private func waitForReady(attempt: UUID, deadline: Date) {
@@ -126,7 +127,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             } catch { failStart(safeError("Неверные адреса или маршруты профиля.")) }
             return
         }
-        guard state != "captcha_required", state != "stopped", Date() < deadline else { failStart(safeError("Транспорт не готов. Для VK повторите авторизацию в Blink.")); return }
+        guard state != "captcha_required", state != "stopped", Date() < deadline else { failStart(safeError("Транспорт не готов. Для TURN повторите авторизацию в Blink.")); return }
         ioQueue.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.waitForReady(attempt: attempt, deadline: deadline) }
     }
     private func finishStart(_ error: Error?) { let callback = pendingStart; pendingStart = nil; callback?(error) }
@@ -150,7 +151,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             let states = ["stopped", "connecting", "captcha_required", "ready", "running"]
             diagnostics?.record("extension.state", fields: ["state": Int64(states.firstIndex(of: state) ?? -1)], critical: true)
         }
-        if heartbeat <= 20 || heartbeat % 10 == 0 {
+        if DiagnosticStore.collectionEnabled && (heartbeat <= 20 || heartbeat % 10 == 0) {
             var fields = DiagnosticStore.memory()
             if let runtime = try? JSONDecoder().decode([String: Int64].self, from: Data(MobileRuntimeStatsJSON().utf8)) { fields.merge(runtime) { _, new in new } }
             if let traffic = try? JSONDecoder().decode([String: Int64].self, from: Data(engine.statsJSON().utf8)) { fields["txBytes"] = traffic["tx"] ?? 0; fields["rxBytes"] = traffic["rx"] ?? 0 }
@@ -166,7 +167,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
             generation = UUID(); engine.stop(); self.engine = nil
             stateLock.lock(); running = false; stateLock.unlock()
             protector.stop()
-            cancelTunnelWithError(safeError("Сессия завершена или VK требует новую авторизацию. Откройте Blink и подключитесь заново.")); return
+            cancelTunnelWithError(safeError("Сессия завершена или TURN требует новую авторизацию. Откройте Blink и подключитесь заново.")); return
         }
         if state == "connecting" {
             if unreadySince == nil { unreadySince = Date() }
@@ -185,6 +186,7 @@ final class XrayPacketTunnelProvider: NEPacketTunnelProvider, MobilePacketWriter
         }
     }
     private func drainNativeEvents() {
+        MobileSetDiagnosticCollection(DiagnosticStore.collectionEnabled)
         struct NativeEvent: Decodable { let event: String; let fields: [String: Int64]?; let sessionId: String?; let occurredAt: Int64? }
         if let rows = try? JSONDecoder().decode([NativeEvent].self, from: Data(MobileDrainDiagnosticEventsJSON().utf8)) {
             for row in rows where row.sessionId == nil || row.sessionId == diagnostics?.session.id {

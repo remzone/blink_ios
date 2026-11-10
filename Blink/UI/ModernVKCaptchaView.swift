@@ -7,7 +7,7 @@ struct ModernVKCaptchaView: View {
     var body: some View {
         NavigationStack {
             CaptchaController(controller: challenge.controller)
-                .navigationTitle("Проверка VK")
+                .navigationTitle("Проверка TURN")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {

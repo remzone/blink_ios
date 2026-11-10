@@ -8,6 +8,7 @@ struct SubscriptionMetadata: Codable, Equatable, Sendable {
     var download: Int64?
     var total: Int64?
     var expiresAt: Int64?
+    var updatedAt: Date? = nil
 
     var used: Int64? {
         guard upload != nil || download != nil else { return nil }
@@ -60,7 +61,7 @@ struct SubscriptionMetadata: Codable, Equatable, Sendable {
         // Valid Date range for a provider expiry; 0 means no expiry supplied.
         let expiry = numbers["expire"].flatMap { (1...253_402_300_799).contains($0) ? $0 : nil }
         return Self(title: label("profile-title", limit: 120), announcement: label("announce", limit: 240),
-                    upload: numbers["upload"], download: numbers["download"], total: numbers["total"], expiresAt: expiry)
+                    upload: numbers["upload"], download: numbers["download"], total: numbers["total"], expiresAt: expiry, updatedAt: Date())
     }
     private static func decodeBase64(_ value: String) -> String? {
         var encoded = value.filter { !$0.isWhitespace }.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")

@@ -8,6 +8,10 @@ struct VokopSubscription: Codable {
     let expires_at: Int64
     let profiles: [Profile]
     var routing: RoutingPolicy? = nil
+    var vpn_profiles: [String]? = nil
+    var bot_url: String? = nil
+    var metadata: Metadata? = nil
+    struct Metadata: Codable { let title: String?; let announcement: String? }
 
     struct Profile: Codable, Identifiable {
         let id: String
@@ -127,6 +131,7 @@ struct SavedVokopSubscription: Codable {
     let url: String
     let highestRevision: Int64
     let document: VokopSubscription?
+    var updatedAt: Date? = nil
 }
 
 struct SubscriptionAccount: Decodable {
@@ -137,6 +142,7 @@ struct SubscriptionAccount: Decodable {
     let remaining_seconds: Int64
     let checked_at: Int64
     let payment_url: String?
+    var bot_url: String? = nil
     var urgent: Bool { urgent(at: Date()) }
     func urgent(at now: Date) -> Bool { !active || paid_until - Int64(now.timeIntervalSince1970) <= 3 * 86400 }
     var balance: String {

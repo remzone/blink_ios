@@ -17,7 +17,7 @@ struct VKAdvancedSettingsView: View {
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 TextField("DNS до подключения", text: $options.bootstrapDNS)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
-            } header: { Label("Путь до VK", systemImage: "arrow.triangle.branch") } footer: { Text("Для VLESS авто проверяет UDP и TCP до готовности DTLS/KCP/smux; для WG меняет TCP/UDP при ошибке сеанса. Релей по умолчанию выдаёт VK; вручную нужен совместимый TURN с теми же учётными данными. Смена адреса не меняет способ авторизации на Яндекс или другой сервис.") }
+            } header: { Label("Путь до TURN", systemImage: "arrow.triangle.branch") } footer: { Text("Для VLESS авто проверяет UDP и TCP до готовности DTLS/KCP/smux; для WG меняет TCP/UDP при ошибке сеанса. Релей по умолчанию выдаёт TURN; вручную нужен совместимый TURN с теми же учётными данными. Смена адреса не меняет способ авторизации на Яндекс или другой сервис.") }
             Section {
                 Picker("Соединений с релеем", selection: $options.connections) {
                     Text("Как в подписке").tag(0)
@@ -47,8 +47,8 @@ struct VKAdvancedSettingsView: View {
             Section {
                 Label("VLESS: KCP/smux · WG: DTLS / SRTP / WRAP", systemImage: "server.rack")
                 Text("Тип и обёртка заданы подпиской и должны совпадать с сервером. WG-конфиг содержит отдельные ключи и адрес интерфейса. WRAP-A, WRAP-S и csqtt пока не поддерживаются.")
-                Label("CAPTCHA: вручную через SDK VK", systemImage: "person.crop.rectangle.badge.checkmark")
-                Text("Если VK запросит проверку, приложение откроет её для вас перед запуском VPN.")
+                Label("CAPTCHA: пройти проверку вручную", systemImage: "person.crop.rectangle.badge.checkmark")
+                Text("Если TURN запросит проверку, приложение откроет её для вас перед запуском VPN.")
             }.font(.footnote).foregroundStyle(.secondary)
             if !options.isValid {
                 Label("Проверьте IP-адрес DNS и TURN в формате host:port. Некорректные изменения не сохраняются.", systemImage: "exclamationmark.triangle").foregroundStyle(.red)
@@ -59,7 +59,7 @@ struct VKAdvancedSettingsView: View {
             }
         }
         .disabled(xray.hasActiveConnection)
-        .navigationTitle("Настройки VK").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Настройки TURN").navigationBarTitleDisplayMode(.inline)
         .onChange(of: options) { $0.save() }
     }
 }

@@ -5,6 +5,8 @@ struct SubscriptionView: View {
     @EnvironmentObject private var navigation: BlinkNavigation
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var xray: XrayVPNController
+    @State private var editingLink = false
+    @State private var updatedAt: Date?
     @State private var link = ""
     @State private var document: VokopSubscription?
     @State private var message: String?
@@ -32,6 +34,11 @@ struct SubscriptionView: View {
                 if xray.hasActiveConnection || xray.errorMessage != nil { ActiveConnectionCard() }
                 if xray.route == .vk && xray.hasActiveConnection { VKJourneyView() }
                 if let document {
+                    if let title = document.metadata?.title { Text(title).font(.title3.bold()) }
+                    if let announcement = document.metadata?.announcement { Text(announcement).font(.subheadline).foregroundStyle(.secondary) }
+                    if let updatedAt { Label("Обновлено " + updatedAt.formatted(date: .abbreviated, time: .shortened), systemImage: "arrow.clockwise").font(.caption).foregroundStyle(.secondary) }
+                    if let count = document.vpn_profiles?.count, count > 0 { Label("Обычный VPN: \(count) · доступен в разделе VPN", systemImage: "shield.lefthalf.filled").font(.subheadline) }
+                    if UserDefaults.standard.integer(forKey: "blink.managedVPNRejected") > 0 { Text("Часть обычных VPN-профилей пока не поддерживается этим клиентом.").font(.caption).foregroundStyle(.orange) }
                     subscriptionSummary(document)
                     BlinkSectionHeading(title: "Серверы через TURN", detail: "\(document.profiles.count)")
                     LazyVGrid(columns: columns, spacing: 16) {
@@ -42,7 +49,7 @@ struct SubscriptionView: View {
                 }
                 DisclosureGroup("О подключении через TURN") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("VK может попросить CAPTCHA перед запуском VPN. Вход в ваше приложение VK не используется.")
+                        Text("Перед подключением может потребоваться CAPTCHA. Проверка открывается прямо в Blink.")
                         Text("Оплаченный срок и дата окончания доступны на главном экране.")
                         Text("В экспериментальном TURN-транспорте сертификат DTLS-сервера не проверяется. Для защиты содержимого используйте HTTPS в приложениях.")
                     }.font(.footnote).foregroundStyle(.secondary).padding(.top, 12)
@@ -60,7 +67,7 @@ struct SubscriptionView: View {
             do {
                 let saved = try container.secretStore.read(profileID: credentialID, kind: .subscriptionURL) ?? ""
                 if let state = try? JSONDecoder().decode(SavedVokopSubscription.self, from: Data(saved.utf8)) {
-                    link = state.url; lastURL = state.url; highestRevision = state.highestRevision; document = state.document
+                    link = state.url; lastURL = state.url; highestRevision = state.highestRevision; document = state.document; updatedAt = state.updatedAt
                 } else {
                     // One-time compatibility with the earlier URL-only Keychain value.
                     link = saved; lastURL = saved; highestRevision = 0
@@ -90,9 +97,12 @@ struct SubscriptionView: View {
                     } label: { Image(systemName: "ellipsis").frame(width: 40, height: 40) }.accessibilityLabel("Действия с подпиской")
                 }
             }
+            if document == nil || editingLink {
             SecureField("HTTPS-ссылка Vokop", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled()
                 .padding(14).background(BlinkTheme.background, in: RoundedRectangle(cornerRadius: 14)).disabled(loading)
             PasteButton(payloadType: String.self) { if let value = $0.first { link = value.trimmingCharacters(in: .whitespacesAndNewlines) } }.disabled(loading)
+            }
+            if document != nil { Button { editingLink.toggle() } label: { Label("Заменить ссылку", systemImage: "plus.circle") }.font(.subheadline) }
             Button { refresh() } label: { Label(loading ? "Загружаем серверы…" : document == nil ? "Загрузить серверы" : "Обновить серверы", systemImage: "arrow.clockwise") }
                 .buttonStyle(BlinkActionStyle(prominent: true, color: Color(red: 0.75, green: 0.78, blue: 1))).disabled(loading || link.isEmpty)
             if loading { ProgressView().frame(maxWidth: .infinity) }
@@ -124,7 +134,7 @@ struct SubscriptionView: View {
                 VStack(alignment: .leading) { BlinkPill(title: "Через TURN", symbol: "arrow.triangle.branch", color: BlinkTheme.vk); BlinkPill(title: profile.backendTitle, color: BlinkTheme.vk) }
             }
             if let country = ProfilePresentation(name: profile.name).country { Label(country, systemImage: "globe.europe.africa").font(.caption).foregroundStyle(.secondary) }
-            Text("Авторизация VK → TURN → VPN-сервер").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Проверка доступа → TURN → VPN-сервер").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button { Task { UserDefaults.standard.set(profile.id, forKey: "blink.lastTURNProfile"); await xray.connect(profile: profile, expiresAt: document.expires_at, secrets: container.secretStore, diagnosticURL: lastURL) } } label: {
                 Label("Подключить через TURN", systemImage: "power")
             }.buttonStyle(BlinkActionStyle(prominent: true, color: Color(red: 0.75, green: 0.78, blue: 1))).disabled(xray.hasActiveConnection)
@@ -148,7 +158,10 @@ struct SubscriptionView: View {
                 let result = try await VokopSubscriptionClient().fetch(requestedURL, minimumRevision: minimumRevision)
                 try Task.checkCancellation()
                 guard requestID == id else { return }
-                let state = SavedVokopSubscription(url: requestedURL, highestRevision: result.revision, document: result)
+                _ = try ManagedSubscriptionStore.apply(result, url: requestedURL, store: container.secretStore)
+                updatedAt = Date()
+                editingLink = false
+                let state = SavedVokopSubscription(url: requestedURL, highestRevision: result.revision, document: result, updatedAt: Date())
                 let encoded = String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
                 try container.secretStore.save(encoded, profileID: credentialID, kind: .subscriptionURL)
                 document = result; lastURL = requestedURL; link = requestedURL; highestRevision = result.revision
@@ -168,6 +181,7 @@ struct SubscriptionView: View {
         requestID = UUID(); task?.cancel(); task = nil
         document = nil; lastURL = ""; highestRevision = 0; link = ""; loading = false
         do {
+            try ManagedSubscriptionStore.remove(store: container.secretStore)
             try container.secretStore.delete(profileID: credentialID)
             message = "Подписка удалена."
         } catch { message = "Не удалось удалить подписку." }
